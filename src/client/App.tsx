@@ -27,7 +27,10 @@ export function App() {
   const refresh = useCallback(
     () =>
       api<ProjectSummary[]>('/projects')
-        .then(setProjects)
+        .then((updated) => {
+          setProjects(updated);
+          setError('');
+        })
         .catch((e) => setError(errorText(e))),
     [],
   );

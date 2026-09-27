@@ -7,6 +7,7 @@ import {
   errorCode,
   exists,
   fingerprint,
+  sameFile,
   safePath,
   within,
 } from './paths.js';
@@ -35,52 +36,67 @@ export async function cleanupProjectPlans(store: Store, removed: RemovedProject)
   try {
     for (const folder of ['imports', 'batches', 'operations', 'checkpoints'])
       await safePath(directory, folder);
-    const stateFile = await safePath(directory, 'state.json');
-    if (!(await exists(stateFile)))
-      throw new AppError(
-        'Saved project state is missing, so the app cannot verify which records to delete. No additional files were deleted.',
-      );
-    const state = stateSchema.parse(JSON.parse(await readFile(stateFile, 'utf8')));
-    if (
-      state.project.id !== removed.project.id ||
-      path.resolve(state.project.dataDir).toLowerCase() !== directory.toLowerCase() ||
-      path.resolve(state.project.mediaRoot).toLowerCase() !== mediaRoot.toLowerCase()
-    )
-      throw new AppError(
-        'The saved project no longer matches this removed project. Its files were left untouched.',
-      );
-    const records: string[] = [];
-    for (const batch of state.batches)
-      records.push(
-        `imports/${batch.handoffId}.json`,
-        `batches/${batch.id}.json`,
-        `batches/${batch.id}.md`,
-      );
-    for (const operation of state.operations) records.push(`operations/${operation.id}.json`);
-    const checkpoints = await safePath(directory, 'checkpoints');
-    if (await exists(checkpoints)) {
-      for (const name of await readdir(checkpoints))
-        if (/^\d+\.json$/.test(name)) {
-          const checkpoint = stateSchema.parse(
-            JSON.parse(await readFile(await safePath(directory, `checkpoints/${name}`), 'utf8')),
-          );
-          if (
-            checkpoint.project.id !== state.project.id ||
-            path.resolve(checkpoint.project.dataDir).toLowerCase() !== directory.toLowerCase()
-          )
-            throw new AppError('A checkpoint belongs to another project. No files were deleted.');
-          records.push(`checkpoints/${name}`);
-        }
-    }
-    records.push('state.json'); // Retain the authoritative state until other records are removed, so cleanup can retry.
-    const files: string[] = [];
-    // Validate every path before deleting any record, including linked ancestors and non-files.
-    for (const record of new Set(records)) {
-      const file = await safePath(directory, record);
-      if (await exists(file)) {
-        await fingerprint(file);
-        files.push(file);
+    let cleanupFiles = removed.cleanupFiles;
+    if (!cleanupFiles) {
+      const stateFile = await safePath(directory, 'state.json');
+      if (!(await exists(stateFile)))
+        throw new AppError(
+          'Saved project state is missing, so the app cannot verify which records to delete. No additional files were deleted.',
+        );
+      const state = stateSchema.parse(JSON.parse(await readFile(stateFile, 'utf8')));
+      if (
+        state.project.id !== removed.project.id ||
+        path.resolve(state.project.dataDir).toLowerCase() !== directory.toLowerCase() ||
+        path.resolve(state.project.mediaRoot).toLowerCase() !== mediaRoot.toLowerCase()
+      )
+        throw new AppError(
+          'The saved project no longer matches this removed project. Its files were left untouched.',
+        );
+      const records: string[] = [];
+      for (const batch of state.batches)
+        records.push(
+          `imports/${batch.handoffId}.json`,
+          `batches/${batch.id}.json`,
+          `batches/${batch.id}.md`,
+        );
+      for (const operation of state.operations) records.push(`operations/${operation.id}.json`);
+      const checkpoints = await safePath(directory, 'checkpoints');
+      if (await exists(checkpoints)) {
+        for (const name of await readdir(checkpoints))
+          if (/^\d+\.json$/.test(name)) {
+            const checkpoint = stateSchema.parse(
+              JSON.parse(await readFile(await safePath(directory, `checkpoints/${name}`), 'utf8')),
+            );
+            if (
+              checkpoint.project.id !== state.project.id ||
+              path.resolve(checkpoint.project.dataDir).toLowerCase() !== directory.toLowerCase()
+            )
+              throw new AppError('A checkpoint belongs to another project. No files were deleted.');
+            records.push(`checkpoints/${name}`);
+          }
       }
+      records.push('state.json'); // Retain the authoritative state until other records are removed, so cleanup can retry.
+      cleanupFiles = [];
+      // Validate every path before deleting any record, including linked ancestors and non-files.
+      for (const record of new Set(records)) {
+        const file = await safePath(directory, record);
+        if (await exists(file)) {
+          cleanupFiles.push({ relativePath: record, baseline: await fingerprint(file) });
+        }
+      }
+      // Persist verified identities before deleting anything. A retry no longer depends
+      // on state.json surviving the last unlink or registry-write failure.
+      await store.recordCleanup(removed.removalId, cleanupFiles);
+    }
+    const files: string[] = [];
+    for (const record of cleanupFiles) {
+      const file = await safePath(directory, record.relativePath);
+      if (!(await exists(file))) continue;
+      if (!sameFile(record.baseline, await fingerprint(file)))
+        throw new AppError(
+          'A saved record changed after cleanup began. Its files were left untouched.',
+        );
+      files.push(file);
     }
     for (const file of files) await unlink(file);
     for (const folder of ['imports', 'batches', 'operations', 'checkpoints']) {

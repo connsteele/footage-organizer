@@ -58,6 +58,19 @@ it('rejects foreign origins, host rebinding, and tokenless mutations', async () 
   });
   expect(invalid.status).toBe(400);
 });
+it('reports oversized and malformed JSON as input errors', async () => {
+  const { token } = await (await fetch(`${base}/api/session`)).json();
+  const headers = { 'content-type': 'application/json', 'x-organizer-token': token };
+  const malformed = await fetch(`${base}/api/projects`, { method: 'POST', headers, body: '{' });
+  expect(malformed.status).toBe(400);
+  const oversized = await fetch(`${base}/api/projects`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ notes: 'x'.repeat(8 * 1024 * 1024) }),
+  });
+  expect(oversized.status).toBe(413);
+  expect((await oversized.json()).error).toContain('8 MB');
+});
 it('refuses shutdown during a move and allows it when idle', async () => {
   const session = await (await fetch(`${base}/api/session`)).json();
   const stop = () =>
@@ -74,5 +87,14 @@ it('refuses shutdown during a move and allows it when idle', async () => {
     service.busy = null;
   }
   expect((await stop()).status).toBe(200);
+  expect(
+    (
+      await fetch(`${base}/api/browse-folder`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-organizer-token': session.token },
+        body: '{}',
+      })
+    ).status,
+  ).toBe(503);
   await vi.waitFor(() => expect(shutdown).toHaveBeenCalledOnce());
 });

@@ -113,3 +113,96 @@ it('blocks shutdown when pending edits cannot be saved and unregisters closed dr
   await expect(saveBeforeStop()).resolves.toBeUndefined();
   expect(apiMock).toHaveBeenCalledTimes(1);
 });
+it('shares an in-flight save across concurrent flushes and includes later edits once', async () => {
+  let complete!: (batch: Batch) => void;
+  apiMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  apiMock.mockResolvedValueOnce({ ...initial, revision: 3 });
+  const { result } = renderHook(() => useDraft('project', initial));
+  act(() =>
+    result.current.change((b) => {
+      b.notes = 'First';
+    }),
+  );
+  let saves!: Promise<void>[];
+  act(() => {
+    saves = [result.current.flush(), result.current.flush(), saveBeforeStop()];
+  });
+  act(() =>
+    result.current.change((b) => {
+      b.notes = 'Latest';
+    }),
+  );
+  await act(async () => {
+    complete({ ...initial, revision: 2 });
+    await Promise.all(saves);
+  });
+  expect(apiMock).toHaveBeenCalledTimes(2);
+  expect(apiMock.mock.calls[1][1].body).toMatchObject({ notes: 'Latest', revision: 2 });
+  expect(result.current.status).toBe('saved');
+});
+it('undoes and redoes saved edits using the latest server revision', async () => {
+  let revision = initial.revision;
+  apiMock.mockImplementation(async () => ({ ...initial, revision: ++revision }));
+  const { result } = renderHook(() => useDraft('project', initial));
+  act(() =>
+    result.current.change((b) => {
+      b.notes = 'Decision';
+    }),
+  );
+  await act(async () => {
+    await result.current.flush();
+  });
+  act(() => result.current.undo());
+  await act(async () => {
+    await result.current.flush();
+  });
+  act(() => result.current.redo());
+  await act(async () => {
+    await result.current.flush();
+  });
+  expect(
+    apiMock.mock.calls.map(([, options]) => [options.body.notes, options.body.revision]),
+  ).toEqual([
+    ['Decision', 1],
+    ['', 2],
+    ['Decision', 3],
+  ]);
+  expect(result.current.batch.notes).toBe('Decision');
+});
+it('preserves a failed save and retries the latest edit without losing unload protection', async () => {
+  apiMock.mockRejectedValueOnce(new Error('Disconnected'));
+  apiMock.mockResolvedValueOnce({ ...initial, revision: 2 });
+  const { result } = renderHook(() => useDraft('project', initial));
+  act(() =>
+    result.current.change((b) => {
+      b.notes = 'Keep this';
+    }),
+  );
+  await act(async () => {
+    await expect(result.current.flush()).rejects.toThrow('Disconnected');
+  });
+  const before = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(before);
+  expect(before.defaultPrevented).toBe(true);
+  act(() =>
+    result.current.change((b) => {
+      b.notes = 'Keep this and the correction';
+    }),
+  );
+  await act(async () => {
+    await result.current.flush();
+  });
+  expect(apiMock.mock.calls[1][1].body).toMatchObject({
+    revision: 1,
+    notes: 'Keep this and the correction',
+  });
+  expect(result.current.error).toBe('');
+  const after = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(after);
+  expect(after.defaultPrevented).toBe(false);
+});

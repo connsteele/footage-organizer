@@ -16,6 +16,8 @@ Paths and proposed folders are relative to the footage root, with `/` separators
 
 Reuse existing project clip IDs. New clips take IDs above the existing maximum. Never renumber due to sorting or changed placement. Current paths must match the catalog. Each new handoff needs new `handoffId` and `batchId` values (letters, digits, hyphens, underscores; at most 80 characters).
 
+Handoff and batch IDs become saved filenames. Do not use Windows device names such as `CON`, `NUL`, `COM1`, or `LPT1`, or reuse an existing ID with different capitalization. The importer rejects extension changes: keep the source file's extension in every proposed filename.
+
 ## Example
 
 ```json

@@ -134,6 +134,17 @@ export class Store {
       (await this.removedProjects()).filter((r) => r.removalId !== removalId),
     );
   }
+  async recordCleanup(
+    removalId: string,
+    cleanupFiles: NonNullable<RemovedProject['cleanupFiles']>,
+  ) {
+    const records = await this.removedProjects();
+    const record = records.find((r) => r.removalId === removalId);
+    if (!record) throw new AppError('Removed project not found.', 404);
+    record.cleanupFiles = cleanupFiles;
+    removedProjectSchema.parse(record);
+    await atomicWrite(path.join(this.dataDir, 'removed-projects.json'), records);
+  }
   async release() {
     for (const file of this.locks) await unlink(file).catch(() => undefined);
     this.locks.clear();

@@ -8,7 +8,14 @@
     },
     "handoffId": {
       "type": "string",
-      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+      "allOf": [
+        {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        {
+          "pattern": "^(?!(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$)"
+        }
+      ]
     },
     "projectId": {
       "type": "string",
@@ -16,7 +23,14 @@
     },
     "batchId": {
       "type": "string",
-      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+      "allOf": [
+        {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        {
+          "pattern": "^(?!(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$)"
+        }
+      ]
     },
     "title": {
       "type": "string",

@@ -36,6 +36,7 @@ import { cleanupProjectPlans } from './projectCleanup.js';
 
 export class Organizer {
   busy: string | null = null;
+  stopping = false;
   private reviews = new Map<string, MoveReview>();
   private activeJob: Promise<void> | null = null;
   readonly updates: ReviewUpdates;
@@ -46,7 +47,32 @@ export class Organizer {
     this.updates = new ReviewUpdates(store, () => this.idle());
   }
   private idle() {
+    if (this.stopping)
+      throw new AppError('The app is stopping. Relaunch it before continuing.', 503);
     if (this.busy) throw new AppError('A move is in progress. Wait for its results.', 409);
+  }
+  async prepareShutdown() {
+    return this.store.serial(async () => {
+      if (this.stopping) return;
+      this.idle();
+      this.stopping = true;
+    });
+  }
+  async drain() {
+    await this.store.serial(async () => {
+      this.stopping = true;
+    });
+    await this.waitForIdle();
+  }
+  async projectState(projectId: string) {
+    return this.store.serial(async () => {
+      const state = await this.store.load(projectId);
+      // A failed journal save can end a job while leaving a running record on disk.
+      // Polling recovers it once storage works again, so the progress UI can finish.
+      if (!this.busy && !this.stopping && state.operations.some((o) => o.status === 'running'))
+        return this.reconcileUnlocked(state);
+      return state;
+    });
   }
   private batch(state: ProjectState, batchId: string) {
     const batch = state.batches.find((b) => b.id === batchId);
@@ -88,6 +114,13 @@ export class Organizer {
       project.dataDir = path.resolve(project.dataDir);
       if (within(project.mediaRoot, project.dataDir) || within(project.dataDir, project.mediaRoot))
         throw new AppError('Keep the plan folder separate from the footage folder.');
+      const overlaps = (a: string, b: string) => within(a, b) || within(b, a);
+      if (
+        [project.mediaRoot, project.dataDir].some((folder) =>
+          overlaps(path.resolve(this.store.dataDir), folder),
+        )
+      )
+        throw new AppError('Keep footage and plan folders separate from the app storage folder.');
       for (const summary of await this.summaries()) {
         if (
           within(summary.mediaRoot, project.mediaRoot) ||
@@ -97,10 +130,9 @@ export class Organizer {
             'This footage folder overlaps an existing project. Open that project instead.',
           );
         if (
-          within(summary.mediaRoot, project.dataDir) ||
-          within(project.mediaRoot, summary.dataDir) ||
-          within(summary.dataDir, project.dataDir) ||
-          within(project.dataDir, summary.dataDir)
+          overlaps(summary.mediaRoot, project.dataDir) ||
+          overlaps(project.mediaRoot, summary.dataDir) ||
+          overlaps(summary.dataDir, project.dataDir)
         )
           throw new AppError('Choose separate project and plan folders.');
       }
@@ -218,7 +250,11 @@ export class Organizer {
         );
       const existing = state.batches.find((b) => b.handoffId === handoff.handoffId);
       if (existing) return existing;
-      if (state.batches.some((b) => b.id === handoff.batchId))
+      if (state.batches.some((b) => b.handoffId.toLowerCase() === handoff.handoffId.toLowerCase()))
+        throw new AppError(
+          'That handoff ID is already in use with different capitalization. Use a new ID.',
+        );
+      if (state.batches.some((b) => b.id.toLowerCase() === handoff.batchId.toLowerCase()))
         throw new AppError(
           'That batch ID is already in use. For held clips, use Agent follow-up in that batch. A new full handoff needs a new batch ID.',
         );
@@ -254,6 +290,11 @@ export class Organizer {
         clip.proposed.folder = relativePath(clip.proposed.folder, true);
         if (filenameProblem(clip.proposed.filename))
           throw new AppError(`Clip ${clip.id}: ${filenameProblem(clip.proposed.filename)}`);
+        if (
+          path.extname(clip.proposed.filename).toLowerCase() !==
+          path.extname(clip.source.relativePath).toLowerCase()
+        )
+          throw new AppError(`Clip ${clip.id}: keep the original file extension.`);
         const key = clip.source.relativePath.toLowerCase();
         if (sourceSet.has(key)) throw new AppError('The same source file appears more than once.');
         sourceSet.add(key);
@@ -367,7 +408,21 @@ export class Organizer {
     const destinations = new Set<string>();
     if (
       state.operations.some(
-        (o) => o.batchId === batchId && o.items.some((i) => i.status === 'ambiguous'),
+        (o) => o.status === 'running' || o.items.some((i) => i.status === 'moving'),
+      )
+    )
+      review.issues.push({
+        clipId: null,
+        message: 'An earlier move needs recovery. Use Check recovery before starting another move.',
+      });
+    if (
+      state.operations.some((o) =>
+        o.items.some(
+          (i) =>
+            i.status === 'ambiguous' &&
+            (o.batchId === batchId ||
+              batch.clips.some((clip) => clip.id === i.clipId && !clip.applied)),
+        ),
       )
     )
       review.issues.push({
@@ -390,6 +445,10 @@ export class Organizer {
         if (clip.importIssue) throw new AppError(clip.importIssue);
         if (!clip.baseline)
           throw new AppError('This clip has no verified source baseline. Import a fresh handoff.');
+        if (/[\\/]/.test(clip.proposed.filename))
+          throw new AppError(
+            'The filename cannot contain directory separators. Choose its folder separately.',
+          );
         relativePath(to);
         if (path.extname(to).toLowerCase() !== path.extname(clip.currentPath).toLowerCase())
           throw new AppError('Keep the original file extension.');
@@ -423,7 +482,11 @@ export class Organizer {
     return this.store.serial(async () => {
       const state = await this.store.load(projectId);
       const repeated = state.operations.find((o) => o.id === reviewId);
-      if (repeated) return repeated;
+      if (repeated) {
+        if (repeated.batchId !== batchId)
+          throw new AppError('This move belongs to a different batch.', 409);
+        return repeated;
+      }
       this.idle();
       const approved = this.reviews.get(reviewId);
       const batch = this.batch(state, batchId);
@@ -572,14 +635,9 @@ export class Organizer {
     await this.activeJob;
   }
   async player(projectId: string, batchId: string, clipId: number) {
-    this.idle();
-    const state = await this.store.load(projectId);
-    const clip = this.batch(state, batchId).clips.find((c) => c.id === clipId);
-    if (!clip) throw new AppError('Clip not found.', 404);
-    if (!/\.(mp4|mkv|mov|webm|avi|m4v|mp3|wav|flac|m4a)$/i.test(clip.currentPath))
+    const { file } = await this.mediaFile(projectId, batchId, clipId);
+    if (!/\.(mp4|mkv|mov|webm|avi|m4v|mxf|mts|m2ts|mp3|wav|flac|m4a)$/i.test(file))
       throw new AppError('Only media files can be opened in the player.');
-    const file = await safePath(state.project.mediaRoot, clip.currentPath);
-    await fingerprint(file);
     await openMedia(file);
   }
 }

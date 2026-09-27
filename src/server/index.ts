@@ -18,7 +18,7 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
-  await service.waitForIdle();
+  await service.drain();
   server.close(async () => {
     await store.release();
     process.exit(0);

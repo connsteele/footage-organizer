@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 export const safeId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
+// These IDs become filenames; Windows device names are invalid even with .json appended.
+const recordId = safeId.regex(
+  /^(?!(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$)/i,
+  'Choose an ID that is not a reserved Windows device name.',
+);
 export const proposalSchema = z.object({
   filename: z.string().min(1).max(255),
   folder: z.string().max(1500),
@@ -23,9 +28,9 @@ export const handoffClipSchema = z.object({
 });
 export const handoffSchema = z.object({
   schemaVersion: z.literal(1),
-  handoffId: safeId,
+  handoffId: recordId,
   projectId: safeId,
-  batchId: safeId,
+  batchId: recordId,
   title: z.string().min(1).max(240),
   createdAt: z.string().datetime(),
   reviewNotes: z.string().max(64000).default(''),
@@ -45,12 +50,6 @@ export const projectInputSchema = z.object({
   reviewFolder: z.string().max(1800).optional(),
 });
 export type Project = z.infer<typeof projectInputSchema>;
-export const removedProjectSchema = z.object({
-  removalId: safeId,
-  project: projectInputSchema,
-  removedAt: z.string().datetime(),
-});
-export type RemovedProject = z.infer<typeof removedProjectSchema>;
 export const baselineSchema = z.object({
   size: z.number(),
   mtimeMs: z.number(),
@@ -59,6 +58,24 @@ export const baselineSchema = z.object({
   ino: z.string(),
 });
 export type Baseline = z.infer<typeof baselineSchema>;
+export const removedProjectSchema = z.object({
+  removalId: safeId,
+  project: projectInputSchema,
+  removedAt: z.string().datetime(),
+  cleanupFiles: z
+    .array(
+      z.object({
+        relativePath: z
+          .string()
+          .regex(
+            /^(?:state\.json|(?:imports|operations)\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}\.json|batches\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}\.(?:json|md)|checkpoints\/\d+\.json)$/,
+          ),
+        baseline: baselineSchema,
+      }),
+    )
+    .optional(),
+});
+export type RemovedProject = z.infer<typeof removedProjectSchema>;
 export const agentReviewSchema = z.object({
   updateId: safeId,
   reviewedAt: z.string(),

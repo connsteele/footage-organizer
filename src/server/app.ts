@@ -46,6 +46,12 @@ export function createApp(
       req.headers['x-organizer-token'] !== token
     )
       return res.status(403).json({ error: 'App session expired. Reload this page.' });
+    if (
+      service.stopping &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      req.path !== '/api/shutdown'
+    )
+      return res.status(503).json({ error: 'The app is stopping. Relaunch it before continuing.' });
     next();
   });
   app.use(express.json({ limit: '8mb' }));
@@ -127,7 +133,7 @@ export function createApp(
     res.json(await service.updates.apply(projectId(req), batchId(req), req.body)),
   );
   app.get('/api/projects/:projectId', async (req, res) =>
-    res.json(await service.store.load(projectId(req))),
+    res.json(await service.projectState(projectId(req))),
   );
   app.get('/api/projects/:projectId/folders', async (req, res) =>
     res.json(await service.folders(projectId(req))),
@@ -169,9 +175,10 @@ export function createApp(
   app.post('/api/projects/:projectId/recover', async (req, res) =>
     res.json(await service.reconcile(projectId(req))),
   );
-  app.post('/api/shutdown', (_req, res) => {
+  app.post('/api/shutdown', async (_req, res) => {
     if (service.busy)
       throw new AppError('Wait for the current move to finish before stopping the app.', 409);
+    await service.prepareShutdown();
     res.json({ ok: true });
     setTimeout(() => options.shutdown?.(), 150);
   });
@@ -181,6 +188,12 @@ export function createApp(
   app.get('/{*path}', (_req, res) => res.sendFile(path.join(clientDir, 'index.html')));
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) return _next(err);
+    if ((err as { type?: string })?.type === 'entity.too.large')
+      return res
+        .status(413)
+        .json({
+          error: 'This request exceeds the 8 MB limit. Choose a smaller handoff or batch update.',
+        });
     const status =
       err instanceof AppError
         ? err.status

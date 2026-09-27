@@ -45,7 +45,7 @@ An optional, untracked `organizer.local.json` configures your instance. For exam
 
 `FO_DATA_DIR`, `FO_TEMP_DIR`, and `PORT` override these settings. Without configuration, app data defaults to a `Footage Organizer` folder under the user's home directory and temporary files use the system temp folder. Each installation keeps its own settings; example drive letters are not required.
 
-Each project has **Root Footage** (the shared library), **Review Footage** (the default incoming folder inside that library), and a separate **Plan folder** for app records. Browse opens the Windows folder picker; pasted paths also work. For example, Root Footage can be `I:\...\My Review\Video`, Review Footage `Video/_incoming`, and Plan folder `I:\...\My Review\Footage Organizer`. Root Footage and Plan folder may not contain each other. Plans stay separate from application updates. Review Footage can be overridden for each batch without changing the library.
+Each project has **Root Footage** (the shared library), **Review Footage** (the default incoming folder inside that library), and a separate **Plan folder** for app records. Browse opens the Windows folder picker; pasted paths also work. For example, Root Footage can be `I:\...\My Review\Video`, Review Footage `Video/_incoming`, and Plan folder `I:\...\My Review\Footage Organizer`. Root Footage and Plan folder may not contain each other, another project's folders, or the app storage folder. Plans stay separate from application updates. Review Footage can be overridden for each batch without changing the library.
 
 The plan folder contains authoritative `state.json`, original `imports/`, readable `batches/` JSON and Markdown, `operations/` journals, and the latest 20 `checkpoints/`. Imports and operation records are retained. Process locks prevent two servers from editing the same plan folder.
 
@@ -110,7 +110,7 @@ From **All projects → Clean up removed projects**, inspect retained plan folde
 - A failure stops the batch. Completed files remain filed. A fresh review includes only remaining pending changes.
 - Restart recovery reconciles file identities without replaying moves. Ambiguity blocks further execution. **Move history → Check recovery** retries the inspection.
 - Failed saves and stale browser revisions prevent execution. Download unsaved edits before reloading after a conflict.
-- Undo/redo applies to edits in this session. Reset suggestion works after reopening. Filed placements are locked; use a fresh handoff to reorganize them.
+- Undo/redo applies to edits in this session. Reset suggestion restores the imported name and folder while preserving your note and hold status. It works after reopening. Filed placements are locked; use a fresh handoff to reorganize them.
 
 Do not edit active state files or change media during execution. A move batch is not one atomic filesystem transaction. Metadata checks detect ordinary stale files; they are not cryptographic authenticity checks.
 
@@ -135,6 +135,8 @@ Vite runs on `127.0.0.1:5173` and proxies `/api` to Express on port 4317. Stop t
 `src/client` contains React/CSS Modules; `src/server` contains Express, storage, and file operations; `src/shared` contains schemas, types, and Markdown. See [architecture notes](docs/ARCHITECTURE.md).
 
 Tests use disposable files under the configured temporary folder (`FO_TEST_DIR` overrides the test location). They cover import identity, stale writes, actual no-replace moves, collision races, partial failures, recovery, API boundaries, autosave sequencing, and the handoff documentation. Browser QA uses generated practice files.
+
+See the [September 27 code audit](docs/AUDIT_2026-09-27.md) for reproduced bugs, regression coverage, testing limits, and recommended workflow improvements.
 
 Regenerate the handoff schema with `npm run schema`. Convert the earlier placement proposal and inventory with:
 

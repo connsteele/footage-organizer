@@ -1150,8 +1150,6 @@ function ClipRow({
                 onClick={() =>
                   onChange((c) => {
                     c.proposed = { ...c.original.proposed };
-                    c.note = '';
-                    c.held = c.original.hold || c.original.questions.length > 0;
                   })
                 }
               >
