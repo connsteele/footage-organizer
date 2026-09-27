@@ -78,6 +78,37 @@ afterAll(async () => {
   }
 });
 describe('handoffs and saved plans', () => {
+  it('keeps several batches and their decisions under one shared project catalog', async () => {
+    const f = await fixture(undefined, 4);
+    const first = await f.service.importHandoff('test', {
+      ...f.handoff,
+      clips: f.handoff.clips.slice(0, 2),
+    });
+    const edit = editOf(first);
+    edit.notes = 'Session one decisions';
+    edit.clips[0].held = true;
+    await f.service.saveBatch('test', first.id, edit);
+    const second = await f.service.importHandoff('test', {
+      ...f.handoff,
+      handoffId: 'handoff-2',
+      batchId: 'batch-2',
+      title: 'Second recording session',
+      clips: f.handoff.clips.slice(2),
+    });
+    const state = await f.store.load('test');
+    expect(state.batches.map((batch) => batch.id)).toEqual(['batch-2', first.id]);
+    expect(Object.keys(state.catalog)).toEqual(['1', '2', '3', '4']);
+    expect(state.batches[1].notes).toBe('Session one decisions');
+    expect(state.batches[1].clips[0].held).toBe(true);
+    expect(second.clips.map((clip) => clip.id)).toEqual([3, 4]);
+    expect(second.folders).toEqual(first.folders);
+    expect((await f.service.review('test', second.id)).items.map((item) => item.clipId)).toEqual([
+      3, 4,
+    ]);
+    expect((await f.service.review('test', first.id)).items.map((item) => item.clipId)).toEqual([
+      2,
+    ]);
+  });
   it('preserves all 44 IDs and does not overwrite edits when reimported', async () => {
     const f = await fixture(undefined, 44);
     const batch = await f.importBatch();

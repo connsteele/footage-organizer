@@ -39,3 +39,9 @@ A separate Edge walkthrough verified dark mode with a light system preference, r
 The build, type checks, ESLint, and all 21 tests pass. The published JSON schema is checked against the live Zod model, and the standalone example passes the read-only validator. Tests cover invalid IDs/paths/names/extensions and kit exports that preserve saved decisions without mixing independent projects.
 
 A disposable two-project browser walkthrough verified navigation saves pending edits before opening the guide, project selection, saved notes and holds in the kit, exclusion of the unrelated project, all four downloads, the readable in-app protocol, a narrow layout, and the project's Prepare handoff link. No page exceptions occurred. No main-project state or footage was changed.
+
+## Repeated batches and Windows launcher repair
+
+The build, TypeScript checks, ESLint, and all 22 tests pass. A new multi-batch test confirms that importing a second processing session retains the first batch's notes and holds, shares the project catalog and destination folders, and reviews only the selected batch's clips.
+
+The Windows shortcuts were reinstalled against the repository launcher and the user's installed Node. The launch wrapper waits for startup and browser opening and reports failures. Launching the main app opened Footage Organizer in Firefox. On separate scratch data, checks verified a cold start, reopening without a duplicate server, stopping, an already-stopped result, fallback from a missing Node path, and readable errors for an invalid port and missing build. The main instance and real footage were preserved.

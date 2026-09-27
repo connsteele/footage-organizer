@@ -29,6 +29,8 @@ The launcher starts the backend if necessary and opens **http://127.0.0.1:4317**
 
 `npm run shortcut` installs **Footage Organizer** and **Stop Footage Organizer** desktop shortcuts. The stop shortcut shuts down the server and displays the result without opening a terminal; `npm run stop` does the same from a terminal. Wait for browser edits to show **Saved** before using the Windows shortcut. Both stop controls refuse to interrupt an active file move. Startup problems are recorded in `startup.log` and `server.log` in the application data directory.
 
+The launch shortcut uses the installed Node executable found when installing shortcuts, with a PATH fallback if it moves. Its Windows PowerShell target is the hidden launcher host; the app itself stays in this repository. Launch failures appear in a message instead of disappearing silently. Re-run `npm run shortcut` after moving the repo or changing Node installations.
+
 ## Local configuration
 
 An optional, untracked `organizer.local.json` configures your instance. For example, using a writable drive of your choice:
@@ -53,6 +55,10 @@ With the app stopped and FFmpeg available, run `npm run demo`, then `npm run lau
 
 ## Real footage workflow
 
+Create one project for a body of footage that shares a folder library and naming conventions. Add a new batch for each capture/processing session by importing a new handoff into that same project. Earlier batches and decisions remain available, while the catalog and destination folders are shared.
+
+For example, source clips can live under `Video/_incoming/Session 01/` and `Video/_incoming/Session 02/`, with both batches filing into `Video/Story/` and `Video/Gameplay/`. Choose `Video` as the project's footage root; all source and destination paths are relative to it. A batch does not need its own final destination folder, and importing a batch does not move its footage.
+
 1. Create a project with its name, stable ID, footage folder, and plan folder.
 2. Choose **Prepare handoff → Download handoff kit** and give it, along with review material, to the chat reviewing the clips. **Export project context** remains available as a context-only JSON.
 3. Have that chat produce JSON following [the handoff guide](docs/HANDOFF.md) and [schema](docs/handoff.schema.json).
@@ -62,6 +68,8 @@ With the app stopped and FFmpeg available, run `npm run demo`, then `npm run lau
 7. Review the results. Paths, Markdown, and a move log are saved automatically.
 
 Project context includes current IDs and the next available ID. Existing IDs must be reused. Reimporting a handoff opens its saved batch without overwriting edits. A revised handoff needs new batch/handoff IDs and current source paths; it does not merge into an edited batch.
+
+The app's batch is the review plan created at import. Capture, marking, and cutting happen before that, outside the app. There is currently no watch-folder ingestion or empty pre-review batch to create. For every new processing chunk, download a fresh project handoff kit, review that chunk, import its new handoff, and work through its placements. IDs continue across batches rather than restarting at 1.
 
 **Export plan** produces a review record, not an import handoff. It includes original suggestions and current edits so a review agent can inspect your choices. Use a fresh handoff for later imports.
 

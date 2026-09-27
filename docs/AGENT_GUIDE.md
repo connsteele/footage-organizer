@@ -12,6 +12,8 @@ Footage Organizer turns review suggestions into a plan the user edits and execut
 
 The handoff is a proposal, not permission to perform filesystem operations. Reviewing clips does not require the agent to call mutation endpoints, create directories, modify app state, or move files. Import itself saves a review plan; only the user's final move action files the footage.
 
+A project can hold many batches. Usually one batch represents a capture/processing chunk; import each new handoff into the same project to retain its shared clip catalog, naming preferences, and destination folders. Source clips for each chunk can sit in separate subfolders under the project's media root. Final destination folders may be shared across batches. Batch creation happens at handoff import; capture and cutting remain outside this app.
+
 ## What the agent needs
 
 - Current project context: project ID, media root, naming preferences, catalog, and next available clip ID.

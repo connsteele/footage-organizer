@@ -44,7 +44,7 @@ Check recovery repeats inspection after the user resolves paths. Completed items
 
 Express binds to loopback and serves both React and the API. Host/origin checks and a session token protect mutations from unrelated web pages. Clients identify projects, batches, revisions, and clips; they do not submit shell commands.
 
-The launcher checks application identity on the port before reopening it. The process continues after tabs close. The sidebar Stop app button saves pending edits before requesting shutdown; a separate Windows stop shortcut can also stop an idle instance. The desktop launch shortcut uses a tiny VBS wrapper to avoid a console window; application logic remains JS/TS.
+The launcher checks application identity on the port before reopening it. The process continues after tabs close. The sidebar Stop app button saves pending edits before requesting shutdown; a separate Windows stop shortcut can also stop an idle instance. Both shortcuts use hidden PowerShell hosts. The launch wrapper waits for the JS launcher and shows startup/browser errors. It uses the user's installed Node rather than depending on an agent tool runtime. The JS launcher waits for the browser-opening helper, and records failures in the configured data folder. Application logic remains JS/TS.
 
 ## Portable handoff documentation
 
