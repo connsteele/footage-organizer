@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "handoffId": "example-review-2026-09-27-01",
+  "projectId": "example-project",
+  "batchId": "example-opening-review-01",
+  "title": "Example opening clips",
+  "createdAt": "2026-09-27T06:00:00.000Z",
+  "reviewNotes": "Fictional example only. Replace project IDs, paths, review evidence, and timestamps. File size and modification time are omitted in this example; real handoffs should include actual review-time metadata when available.",
+  "folders": ["Story/Opening", "Gameplay/Exploration"],
+  "clips": [
+    {
+      "id": 1,
+      "source": { "relativePath": "_cut/Original wide shot.mp4" },
+      "duration": 42.5,
+      "markers": [{ "seconds": 12.25, "label": "Character entrance" }],
+      "proposed": {
+        "filename": "Opening - Character entrance.mp4",
+        "folder": "Story/Opening"
+      },
+      "rationale": "Introduces the scene and character.",
+      "questions": [],
+      "hold": false
+    },
+    {
+      "id": 2,
+      "source": { "relativePath": "_cut/Unidentified location.mov" },
+      "duration": null,
+      "markers": [],
+      "proposed": {
+        "filename": "Unidentified location.mov",
+        "folder": "Gameplay/Exploration"
+      },
+      "rationale": "Potential exploration footage; keep the filename until the location is confirmed.",
+      "questions": ["Which location does this clip show?"],
+      "hold": true
+    }
+  ]
+}
