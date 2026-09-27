@@ -128,10 +128,17 @@ export function App() {
           )}
           <Routes>
             <Route path="/" element={<Dashboard projects={projects} refresh={refresh} />} />
-            <Route path="/handoff-guide" element={<HandoffGuide projects={projects} />} />
+            <Route
+              path="/handoff-guide"
+              element={<HandoffGuide projects={projects} refresh={refresh} />}
+            />
             <Route
               path="/projects/:projectId/handoff-guide"
-              element={<HandoffGuide projects={projects} />}
+              element={<HandoffGuide projects={projects} refresh={refresh} />}
+            />
+            <Route
+              path="/projects/:projectId/next-batch"
+              element={<HandoffGuide projects={projects} refresh={refresh} nextBatch />}
             />
             <Route
               path="/projects/:projectId"

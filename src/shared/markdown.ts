@@ -8,6 +8,9 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     `Batch: ${batch.id} · Revision: ${batch.revision}`,
     '',
     `Media root: ${project.mediaRoot}`,
+    ...(batch.reviewFolder === undefined
+      ? []
+      : [`Review Footage: ${batch.reviewFolder || '(root)'}`]),
     '',
     '## Review notes',
     '',
@@ -34,7 +37,26 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
             ? 'Unchanged'
             : 'Pending';
       lines.push(
-        `| ${clipLabel(c.id)} | ${cell(c.currentPath)} | ${cell(targetPath(c))} | ${status} | ${cell([c.original.rationale, ...c.original.questions, c.note, c.importIssue ?? ''].filter(Boolean).join('\n'))} |`,
+        `| ${clipLabel(c.id)} | ${cell(c.currentPath)} | ${cell(targetPath(c))} | ${status} | ${cell([`Original review: ${c.original.rationale}`, ...(c.agentReview ? [`Latest follow-up: ${c.agentReview.rationale}`, ...c.agentReview.questions] : c.original.questions), c.note && `Your note: ${c.note}`, c.importIssue ?? ''].filter(Boolean).join('\n'))} |`,
+      );
+    }
+    lines.push('');
+  }
+  for (const accepted of batch.reviewUpdates ?? []) {
+    lines.push(
+      `## Accepted review update ${accepted.update.updateId}`,
+      '',
+      accepted.acceptedAt,
+      '',
+      accepted.update.reviewNotes,
+      '',
+      '| ID | Previous suggestion | Accepted suggestion | Reason |',
+      '|---|---|---|---|',
+    );
+    for (const before of accepted.before) {
+      const suggestion = accepted.update.clips.find((c) => c.id === before.id)!;
+      lines.push(
+        `| ${clipLabel(before.id)} | ${cell(targetPath(before))} | ${cell(targetPath(suggestion))} | ${cell(suggestion.rationale)} |`,
       );
     }
     lines.push('');

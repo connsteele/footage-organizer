@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { handoffSchema, type ProjectState } from '../src/shared/model';
+import { handoffSchema, reviewUpdateSchema, type ProjectState } from '../src/shared/model';
+import updateSchema from '../docs/batch-update.schema.json?raw';
 import { buildHandoffKit, handoffDocuments } from '../src/client/handoffKit';
 import { validateHandoff } from '../scripts/validate-handoff';
 
@@ -11,8 +12,18 @@ it('ships an example accepted by the validator and a schema matching the live mo
   );
 });
 
+it('publishes the same strict batch-update contract used at runtime', () => {
+  expect(JSON.parse(updateSchema)).toEqual(z.toJSONSchema(reviewUpdateSchema, { io: 'input' }));
+});
+
 it('rejects invalid path, identity, filename, and extension proposals before import', () => {
   const invalid = [
+    (handoff: ReturnType<typeof handoffSchema.parse>) => {
+      handoff.reviewFolder = '../Outside';
+    },
+    (handoff: ReturnType<typeof handoffSchema.parse>) => {
+      handoff.reviewFolder = 'Other session';
+    },
     (handoff: ReturnType<typeof handoffSchema.parse>) => {
       handoff.clips[1].id = handoff.clips[0].id;
     },

@@ -1,4 +1,15 @@
 @import url('./theme.css');
+:root {
+  font-size: 100%;
+  --text-small: 0.875rem;
+  --text-body: 1rem;
+  --text-heading: 1.125rem;
+}
+@media (min-width: 2400px) {
+  :root {
+    font-size: 112.5%;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -7,7 +18,7 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  font-size: var(--text-body);
   line-height: 1.5;
 }
 button,
@@ -52,7 +63,7 @@ p {
 label {
   font-weight: 500;
 }
-:where(input:not([type='checkbox']), textarea, select) {
+:where(input:not([type='checkbox']):not([type='radio']), textarea, select) {
   width: 100%;
   border: 1px solid var(--line);
   background: var(--paper);
@@ -62,8 +73,8 @@ label {
 }
 input[type='checkbox'] {
   accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 textarea {
   resize: vertical;

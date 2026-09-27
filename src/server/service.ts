@@ -30,15 +30,21 @@ import {
 } from './paths.js';
 import { Store, atomicWrite } from './store.js';
 import { moveWithoutReplacement, openMedia } from './move.js';
+import { resolveReviewFolder, reviewInventory } from './reviewFolders.js';
+import { ReviewUpdates } from './reviewUpdates.js';
+import { cleanupProjectPlans } from './projectCleanup.js';
 
 export class Organizer {
   busy: string | null = null;
   private reviews = new Map<string, MoveReview>();
   private activeJob: Promise<void> | null = null;
+  readonly updates: ReviewUpdates;
   constructor(
     public store: Store,
     private moveFile = moveWithoutReplacement,
-  ) {}
+  ) {
+    this.updates = new ReviewUpdates(store, () => this.idle());
+  }
   private idle() {
     if (this.busy) throw new AppError('A move is in progress. Wait for its results.', 409);
   }
@@ -75,6 +81,8 @@ export class Organizer {
       this.idle();
       const project = projectInputSchema.parse(input);
       project.mediaRoot = await canonicalRoot(project.mediaRoot);
+      if (project.reviewFolder !== undefined)
+        project.reviewFolder = await resolveReviewFolder(project.mediaRoot, project.reviewFolder);
       if (!path.isAbsolute(project.dataDir))
         throw new AppError('The plan folder must be an absolute path.');
       project.dataDir = path.resolve(project.dataDir);
@@ -125,6 +133,80 @@ export class Organizer {
     const state = await this.store.load(projectId);
     return scanFolders(state.project.mediaRoot);
   }
+  async removedProjects() {
+    const active = await this.store.registry();
+    return (await this.store.removedProjects()).filter(
+      (r) =>
+        !active.some(
+          (p) =>
+            path.resolve(p.dataDir).toLowerCase() === path.resolve(r.project.dataDir).toLowerCase(),
+        ),
+    );
+  }
+  private async cleanupRemoved(removalId: string) {
+    const removed = (await this.store.removedProjects()).find((r) => r.removalId === removalId);
+    if (!removed) throw new AppError('Removed project not found.', 404);
+    const result = await cleanupProjectPlans(this.store, removed);
+    await this.store.forgetRemoved(removalId);
+    return result;
+  }
+  async cleanupProject(removalId: string) {
+    return this.store.serial(async () => {
+      this.idle();
+      return this.cleanupRemoved(removalId);
+    });
+  }
+  async deleteProject(projectId: string, deletePlans = false) {
+    return this.store.serial(async () => {
+      this.idle();
+      const state = await this.store.load(projectId);
+      if (state.operations.some((operation) => operation.status === 'running'))
+        throw new AppError('Wait for this project’s file moves to finish before deleting it.', 409);
+      const removed = await this.store.rememberRemoved(state.project);
+      await this.store.unregister(projectId);
+      for (const [id, review] of this.reviews)
+        if (review.projectId === projectId) this.reviews.delete(id);
+      if (deletePlans) {
+        try {
+          return {
+            removed: true,
+            plansDeleted: true,
+            ...(await this.cleanupRemoved(removed.removalId)),
+          };
+        } catch (e) {
+          return { removed: true, plansDeleted: false, cleanupError: messageOf(e) };
+        }
+      }
+      return { removed: true, plansDeleted: false };
+    });
+  }
+  async mediaFile(projectId: string, batchId: string, clipId: number) {
+    this.idle();
+    const state = await this.store.load(projectId);
+    const clip = this.batch(state, batchId).clips.find((c) => c.id === clipId);
+    if (!clip) throw new AppError('Clip not found.', 404);
+    // The shared catalog tracks the current location even if another batch filed this clip.
+    const current = state.catalog[String(clipId)];
+    if (!current) throw new AppError('Clip is no longer in this project.', 404);
+    const file = await safePath(state.project.mediaRoot, current.path);
+    const baseline = await fingerprint(file);
+    if (!current.baseline || !sameFile(current.baseline, baseline))
+      throw new AppError('This source file changed. Refresh its review before previewing it.', 409);
+    return { file, baseline };
+  }
+  async setReviewFolder(projectId: string, folder: string) {
+    return this.store.serial(async () => {
+      this.idle();
+      const state = await this.store.load(projectId);
+      state.project.reviewFolder = await resolveReviewFolder(state.project.mediaRoot, folder);
+      await this.store.save(state);
+      return state.project;
+    });
+  }
+  async inventory(projectId: string, folder: string) {
+    this.idle();
+    return reviewInventory(await this.store.load(projectId), folder);
+  }
   async importHandoff(projectId: string, input: unknown) {
     return this.store.serial(async () => {
       this.idle();
@@ -138,11 +220,15 @@ export class Organizer {
       if (existing) return existing;
       if (state.batches.some((b) => b.id === handoff.batchId))
         throw new AppError(
-          'That batch ID is already in use. Revised handoffs must use a new batch ID.',
+          'That batch ID is already in use. For held clips, use Agent follow-up in that batch. A new full handoff needs a new batch ID.',
         );
       if (new Set(handoff.clips.map((c) => c.id)).size !== handoff.clips.length)
         throw new AppError('The handoff contains duplicate clip IDs.');
       const sourceSet = new Set<string>();
+      const reviewFolder =
+        handoff.reviewFolder === undefined
+          ? undefined
+          : await resolveReviewFolder(state.project.mediaRoot, handoff.reviewFolder);
       const batch: Batch = {
         id: handoff.batchId,
         handoffId: handoff.handoffId,
@@ -153,9 +239,18 @@ export class Organizer {
         reviewNotes: handoff.reviewNotes,
         notes: '',
         clips: [],
+        reviewFolder,
       };
       for (const clip of handoff.clips) {
         clip.source.relativePath = relativePath(clip.source.relativePath);
+        if (
+          reviewFolder !== undefined &&
+          !within(
+            path.join(state.project.mediaRoot, reviewFolder),
+            path.join(state.project.mediaRoot, clip.source.relativePath),
+          )
+        )
+          throw new AppError(`Clip ${clip.id} is outside the selected Review Footage folder.`);
         clip.proposed.folder = relativePath(clip.proposed.folder, true);
         if (filenameProblem(clip.proposed.filename))
           throw new AppError(`Clip ${clip.id}: ${filenameProblem(clip.proposed.filename)}`);

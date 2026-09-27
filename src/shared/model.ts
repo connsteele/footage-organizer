@@ -29,6 +29,7 @@ export const handoffSchema = z.object({
   title: z.string().min(1).max(240),
   createdAt: z.string().datetime(),
   reviewNotes: z.string().max(64000).default(''),
+  reviewFolder: z.string().max(1800).optional(),
   folders: z.array(z.string().max(1500)).default([]),
   clips: z.array(handoffClipSchema).min(1).max(10000),
 });
@@ -41,8 +42,15 @@ export const projectInputSchema = z.object({
   mediaRoot: z.string().min(1).max(1800),
   dataDir: z.string().min(1).max(1800),
   namingNotes: z.string().max(16000).default(''),
+  reviewFolder: z.string().max(1800).optional(),
 });
 export type Project = z.infer<typeof projectInputSchema>;
+export const removedProjectSchema = z.object({
+  removalId: safeId,
+  project: projectInputSchema,
+  removedAt: z.string().datetime(),
+});
+export type RemovedProject = z.infer<typeof removedProjectSchema>;
 export const baselineSchema = z.object({
   size: z.number(),
   mtimeMs: z.number(),
@@ -51,6 +59,12 @@ export const baselineSchema = z.object({
   ino: z.string(),
 });
 export type Baseline = z.infer<typeof baselineSchema>;
+export const agentReviewSchema = z.object({
+  updateId: safeId,
+  reviewedAt: z.string(),
+  rationale: z.string().max(16000),
+  questions: z.array(z.string().max(4000)),
+});
 export const batchClipSchema = z.object({
   id: z.number().int().positive(),
   currentPath: z.string(),
@@ -61,8 +75,49 @@ export const batchClipSchema = z.object({
   note: z.string(),
   held: z.boolean(),
   applied: z.boolean(),
+  agentReview: agentReviewSchema.optional(),
 });
 export type BatchClip = z.infer<typeof batchClipSchema>;
+export const reviewUpdateSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('batch-update'),
+    updateId: safeId,
+    requestId: safeId,
+    projectId: safeId,
+    batchId: safeId,
+    createdAt: z.string().datetime(),
+    reviewNotes: z.string().max(64000).default(''),
+    clips: z
+      .array(
+        z
+          .object({
+            id: z.number().int().positive(),
+            proposed: proposalSchema.strict(),
+            rationale: z.string().max(16000),
+            questions: z.array(z.string().max(4000)).default([]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(10000),
+  })
+  .strict();
+export type ReviewUpdate = z.infer<typeof reviewUpdateSchema>;
+export const heldReviewRequestSchema = z.object({
+  id: safeId,
+  createdAt: z.string(),
+  batchRevision: z.number().int(),
+  batchNotes: z.string(),
+  clips: z.array(batchClipSchema),
+});
+export type HeldReviewRequest = z.infer<typeof heldReviewRequestSchema>;
+export const acceptedReviewUpdateSchema = z.object({
+  update: reviewUpdateSchema,
+  acceptedAt: z.string(),
+  clipIds: z.array(z.number().int().positive()),
+  before: z.array(batchClipSchema),
+});
 export const batchSchema = z.object({
   id: safeId,
   handoffId: safeId,
@@ -73,6 +128,9 @@ export const batchSchema = z.object({
   reviewNotes: z.string(),
   notes: z.string(),
   clips: z.array(batchClipSchema),
+  reviewFolder: z.string().optional(),
+  reviewRequests: z.array(heldReviewRequestSchema).optional(),
+  reviewUpdates: z.array(acceptedReviewUpdateSchema).optional(),
 });
 export type Batch = z.infer<typeof batchSchema>;
 export const editSchema = z.object({
@@ -147,6 +205,29 @@ export interface MoveReview {
   unchanged: number;
   newFolders: string[];
   expiresAt: number;
+}
+export interface ReviewInventory {
+  folder: string;
+  absoluteFolder: string;
+  scannedAt: string;
+  files: {
+    relativePath: string;
+    size: number;
+    mtimeMs: number;
+    existingClipId: number | null;
+    batchIds: string[];
+  }[];
+  skippedFiles: number;
+}
+export interface ReviewUpdatePreview {
+  update: ReviewUpdate;
+  revision: number;
+  clips: {
+    suggestion: ReviewUpdate['clips'][number];
+    current: BatchClip | null;
+    conflicts: string[];
+    alreadyApplied: boolean;
+  }[];
 }
 export function targetPath(clip: Pick<BatchClip, 'proposed'>) {
   return [clip.proposed.folder, clip.proposed.filename].filter(Boolean).join('/');

@@ -5,14 +5,16 @@ Footage Organizer turns review suggestions into a plan the user edits and execut
 ## The workflow
 
 1. The user cuts and marks footage in their editor and creates a project in Footage Organizer.
-2. They open **Handoff guide**, select that project, and **Download handoff kit**. They give the kit and the clips or review material to a review agent.
+2. They open **Start next batch**, select **Review Footage** inside the project's **Root Footage**, and **Download handoff kit**. They give the kit and the clips or review material to a review agent.
 3. The agent reviews the available evidence, proposes a filename and one destination per clip, and delivers an import JSON plus a readable summary.
 4. The user imports the JSON, changes placements or notes, holds unresolved clips, and reviews the exact file operations before choosing **Move clips**.
-5. For another conversation, download a fresh kit after the latest saves or moves. Use **Export plan** / **Export Markdown** when detailed review of a particular batch is needed.
+5. For new footage, download a fresh kit. For held clips and their user notes, use **Agent follow-up → Export held clips for review** in the existing batch; return a batch update following `docs/BATCH_UPDATES.md`. The user previews and accepts selected suggestions in that batch.
 
 The handoff is a proposal, not permission to perform filesystem operations. Reviewing clips does not require the agent to call mutation endpoints, create directories, modify app state, or move files. Import itself saves a review plan; only the user's final move action files the footage.
 
 A project can hold many batches. Usually one batch represents a capture/processing chunk; import each new handoff into the same project to retain its shared clip catalog, naming preferences, and destination folders. Source clips for each chunk can sit in separate subfolders under the project's media root. Final destination folders may be shared across batches. Batch creation happens at handoff import; capture and cutting remain outside this app.
+
+The app's **Start next batch** action opens the selected project's kit and import workflow. A new batch should contain the next review's clips; earlier held clips stay in their original batch unless the user explicitly asks to revisit them. The batch UI defaults to **Remaining** (unfiled clips, including holds), with **Held**, **Filed**, and **All** filters. These filters do not change kit or plan exports, which retain saved decisions across the full batch.
 
 ## What the agent needs
 
@@ -21,7 +23,7 @@ A project can hold many batches. Usually one batch represents a capture/processi
 - The handoff protocol and schema included in a kit, or the repository's `docs/HANDOFF.md` and `docs/handoff.schema.json`.
 - Any goals or conventions that the user wants for this project.
 
-A kit includes instructions, an example, the JSON schema, and a dated project snapshot. The snapshot includes existing batch IDs, review notes, user decisions, proposed placements, holds, and filed status. It does not contain footage, transcripts, extracted frames, or a full inventory of files that have never been imported. Folder discovery skips linked/hidden directories and is limited to 1,000 folders and 10 nested levels. A catalog baseline records identity captured by the app, not proof that an agent reviewed the current media.
+A kit includes instructions, an example, the JSON schema, and a dated project snapshot. The snapshot includes existing batch IDs, review notes, user decisions, proposed placements, holds, and filed status. With Review Footage selected, `reviewInventory` lists supported media in that folder and its subfolders, with root-relative paths, size, timestamps, existing clip IDs, and batch membership. It does not contain footage, transcripts, or extracted frames. Copy its folder into the handoff's `reviewFolder`. Review new files; do not silently duplicate tracked clips in another batch. Scans skip linked/hidden entries and non-media files, and refuse folders beyond 1,000 directories, 10 nested levels, or 10,000 media files. Choose a smaller session folder if needed. A catalog baseline records identity captured by the app, not proof that an agent reviewed the current media.
 
 An ordinary **Export project context** file contains the catalog and naming preferences but not batch decisions. Pair it with plan exports when continuing earlier work. If neither context nor a kit is available, ask the user to create/select a project and export one before producing a final import file.
 
@@ -58,6 +60,7 @@ One person uses each app instance. Other people run independent copies with thei
 - `docs/HANDOFF.md`: import rules and field reference.
 - `docs/handoff.schema.json`: generated machine-readable schema.
 - `docs/examples/handoff.v1.json`: fictional, schema-valid example.
+- `docs/BATCH_UPDATES.md` and `docs/batch-update.schema.json`: held-clip follow-up protocol for updates within an existing batch.
 - `README.md`: setup and everyday operation.
 - `docs/ARCHITECTURE.md`: implementation and persistence behavior.
 

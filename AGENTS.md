@@ -11,6 +11,8 @@ This is a local Windows app for reviewing proposed footage placements and execut
 
 Keep project IDs, stable clip IDs, current source paths, and the user's naming conventions. A handoff contains suggestions; preparing it does not authorize moving media or writing app state. The user reviews and executes it in the app. See the guide for unresolved questions, revised handoffs, and multiple conversations.
 
+For held clips in an existing batch, obtain **Agent follow-up → Export held clips for review** and follow [docs/BATCH_UPDATES.md](docs/BATCH_UPDATES.md) with [docs/batch-update.schema.json](docs/batch-update.schema.json). Return a batch update tied to the exported request; do not make a duplicate batch for that follow-up.
+
 ## Changing the application
 
 - Read [README.md](README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

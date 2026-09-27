@@ -8,12 +8,18 @@ export function validateHandoff(input: unknown) {
   const handoff = handoffSchema.parse(input);
   const ids = new Set<number>();
   const sources = new Set<string>();
+  const reviewFolder =
+    handoff.reviewFolder === undefined
+      ? undefined
+      : relativePath(handoff.reviewFolder, true).toLowerCase();
   for (const folder of handoff.folders) relativePath(folder, true);
   for (const clip of handoff.clips) {
     if (ids.has(clip.id)) throw new Error(`Duplicate clip ID: ${clip.id}`);
     ids.add(clip.id);
     const source = relativePath(clip.source.relativePath);
     const key = source.toLowerCase();
+    if (reviewFolder && !key.startsWith(`${reviewFolder}/`))
+      throw new Error(`Clip ${clip.id}: source is outside Review Footage.`);
     if (sources.has(key)) throw new Error(`Duplicate source path: ${source}`);
     sources.add(key);
     relativePath(clip.proposed.folder, true);

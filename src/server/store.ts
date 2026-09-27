@@ -2,7 +2,13 @@ import path from 'node:path';
 import { mkdir, open, readFile, rename, readdir, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { safeId, stateSchema, type ProjectState } from '../shared/model.js';
+import {
+  safeId,
+  stateSchema,
+  removedProjectSchema,
+  type ProjectState,
+  type RemovedProject,
+} from '../shared/model.js';
 import { batchMarkdown } from '../shared/markdown.js';
 import { AppError, errorCode } from './paths.js';
 
@@ -83,6 +89,51 @@ export class Store {
       await acquire();
     }
   }
+  async unlock(directory: string) {
+    const file = path.join(directory, '.organizer.lock');
+    if (!this.locks.has(file)) return;
+    try {
+      await unlink(file);
+    } catch (e) {
+      if (errorCode(e) !== 'ENOENT') throw e;
+    }
+    this.locks.delete(file);
+  }
+  async removedProjects() {
+    try {
+      return z
+        .array(removedProjectSchema)
+        .parse(
+          JSON.parse(await readFile(path.join(this.dataDir, 'removed-projects.json'), 'utf8')),
+        );
+    } catch (e) {
+      if (errorCode(e) === 'ENOENT') return [];
+      throw e;
+    }
+  }
+  async rememberRemoved(project: RemovedProject['project']) {
+    const records = await this.removedProjects();
+    const record: RemovedProject = {
+      removalId: randomUUID(),
+      project,
+      removedAt: new Date().toISOString(),
+    };
+    await atomicWrite(path.join(this.dataDir, 'removed-projects.json'), [
+      ...records.filter(
+        (r) =>
+          path.resolve(r.project.dataDir).toLowerCase() !==
+          path.resolve(project.dataDir).toLowerCase(),
+      ),
+      record,
+    ]);
+    return record;
+  }
+  async forgetRemoved(removalId: string) {
+    await atomicWrite(
+      path.join(this.dataDir, 'removed-projects.json'),
+      (await this.removedProjects()).filter((r) => r.removalId !== removalId),
+    );
+  }
   async release() {
     for (const file of this.locks) await unlink(file).catch(() => undefined);
     this.locks.clear();
@@ -115,6 +166,20 @@ export class Store {
       ...registry,
       { id: state.project.id, dataDir: state.project.dataDir },
     ]);
+  }
+  async unregister(id: string) {
+    safeId.parse(id);
+    const registry = await this.registry();
+    const entry = registry.find((p) => p.id === id);
+    if (!entry) throw new AppError('Project not found.', 404);
+    await atomicWrite(
+      path.join(this.dataDir, 'projects.json'),
+      registry.filter((p) => p.id !== id),
+    );
+    // Registration is already removed. Retry releasing an owned lock on shutdown if needed.
+    await this.unlock(entry.dataDir).catch((error) =>
+      console.warn('Removed project retains its lock until the app stops:', error),
+    );
   }
   async save(state: ProjectState) {
     state.revision++;

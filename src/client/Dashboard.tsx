@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight,
   Plus,
@@ -10,9 +10,12 @@ import {
   Layers,
   CheckCircle2,
 } from 'lucide-react';
-import type { Batch, Project, ProjectSummary } from '../shared/model';
+import type { Project, ProjectSummary } from '../shared/model';
 import { api, download, errorText } from './api';
 import { Modal } from './Modal';
+import { useHandoffImport } from './useHandoffImport';
+import { FolderField } from './FolderField';
+import { ProjectDeletion, RemovedProjectsCleanup } from './ProjectDeletion';
 import styles from './App.module.css';
 
 export function Dashboard({
@@ -25,33 +28,11 @@ export function Dashboard({
   const { projectId } = useParams();
   const project = projects.find((p) => p.id === projectId);
   const navigate = useNavigate();
+  const location = useLocation();
   const [creating, setCreating] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
+  const { importing, error: importError, importFile } = useHandoffImport(project?.id, refresh);
   const file = useRef<HTMLInputElement>(null);
-  async function importFile(selected?: File) {
-    if (!selected || !project) return;
-    setImporting(true);
-    setError('');
-    try {
-      if (selected.size > 8 * 1024 * 1024)
-        throw new Error(
-          'Choose a handoff JSON file under 8 MB. Video files stay in your footage folder.',
-        );
-      const handoff = JSON.parse(await selected.text());
-      const batch = await api<Batch>(`/projects/${project.id}/import`, {
-        method: 'POST',
-        body: handoff,
-      });
-      await refresh();
-      navigate(`/projects/${project.id}/batches/${batch.id}`);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setImporting(false);
-      if (file.current) file.current.value = '';
-    }
-  }
   const batchCount = projects.reduce((sum, p) => sum + p.batches.length, 0);
   return (
     <>
@@ -75,17 +56,38 @@ export function Dashboard({
               : 'Bring your review into focus, then put everything where it belongs.'}
           </p>
         </div>
-        <button
-          className={styles.primary}
-          onClick={() => (project ? file.current?.click() : setCreating(true))}
-        >
-          {project ? <Upload size={17} /> : <Plus size={18} />}
-          {project ? 'Import handoff' : 'New project'}
-        </button>
+        <div className={styles.headingActions}>
+          {project ? (
+            <>
+              <button
+                className={styles.secondary}
+                disabled={importing}
+                onClick={() => file.current?.click()}
+              >
+                <Upload size={17} /> Import handoff
+              </button>
+              <Link className={styles.primary} to={`/projects/${project.id}/next-batch`}>
+                <Plus size={18} /> Start next batch
+              </Link>
+            </>
+          ) : (
+            <>
+              <RemovedProjectsCleanup />
+              <button className={styles.primary} onClick={() => setCreating(true)}>
+                <Plus size={18} /> New project
+              </button>
+            </>
+          )}
+        </div>
       </div>
-      {error && (
+      {!project && location.state?.projectMessage && (
+        <p className={styles.notice} role="status">
+          {location.state.projectMessage}
+        </p>
+      )}
+      {(error || importError) && (
         <div className={styles.error} role="alert">
-          {error}
+          {error || importError}
         </div>
       )}
       {project ? (
@@ -95,17 +97,20 @@ export function Dashboard({
             type="file"
             accept=".json,application/json"
             hidden
-            onChange={(e) => void importFile(e.target.files?.[0])}
+            onChange={(e) => {
+              void importFile(e.target.files?.[0]);
+              e.target.value = '';
+            }}
           />
           <section className={styles.projectMeta}>
             <div>
-              <span className={styles.eyebrow}>FOOTAGE FOLDER</span>
+              <span className={styles.eyebrow}>ROOT FOOTAGE</span>
               <p>{project.mediaRoot}</p>
+              {project.reviewFolder !== undefined && (
+                <p>Default review folder: {project.reviewFolder || '(Root Footage)'}</p>
+              )}
             </div>
             <div className={styles.guideDownloads}>
-              <Link className={styles.secondary} to={`/projects/${project.id}/handoff-guide`}>
-                Prepare handoff
-              </Link>
               <button
                 className={styles.secondary}
                 onClick={async () => {
@@ -165,7 +170,11 @@ export function Dashboard({
                   key={batch.id}
                 >
                   <span className={styles.largeIcon}>
-                    {batch.pending ? <Layers size={23} /> : <CheckCircle2 size={23} />}
+                    {batch.pending || batch.held ? (
+                      <Layers size={23} />
+                    ) : (
+                      <CheckCircle2 size={23} />
+                    )}
                   </span>
                   <div>
                     <h3>{batch.title}</h3>
@@ -202,6 +211,14 @@ export function Dashboard({
             </p>
             <p>{project.namingNotes || 'No naming notes yet.'}</p>
           </details>
+          <ProjectDeletion
+            project={project}
+            disabled={importing}
+            onDeleted={async (projectMessage) => {
+              await refresh();
+              navigate('/', { state: { projectMessage } });
+            }}
+          />
         </>
       ) : (
         <>
@@ -302,6 +319,7 @@ function CreateProject({
     name: '',
     id: '',
     mediaRoot: '',
+    reviewFolder: '',
     dataDir: '',
     namingNotes: '',
   });
@@ -353,26 +371,31 @@ function CreateProject({
           />
           <small>Use this same ID in the review handoff.</small>
         </label>
-        <label>
-          Footage folder
-          <input
-            required
-            value={form.mediaRoot}
-            placeholder="I:\Videos\My review\Video"
-            onChange={(e) => setForm({ ...form, mediaRoot: e.target.value })}
-          />
-        </label>
-        <label>
-          Plan folder
-          <input
-            aria-label="Plan folder"
-            required
-            value={form.dataDir}
-            placeholder="I:\Videos\My review\Footage Organizer"
-            onChange={(e) => setForm({ ...form, dataDir: e.target.value })}
-          />
-          <small>Choose a separate folder for saved plans and move records.</small>
-        </label>
+        <FolderField
+          label="Root Footage"
+          required
+          value={form.mediaRoot}
+          disabled={busy}
+          onChange={(mediaRoot) => setForm({ ...form, mediaRoot })}
+          help="Top-level footage library containing incoming clips and their destination folders."
+        />
+        <FolderField
+          label="Review Footage"
+          required
+          value={form.reviewFolder}
+          initialPath={form.mediaRoot}
+          disabled={busy}
+          onChange={(reviewFolder) => setForm({ ...form, reviewFolder })}
+          help="Clips waiting for review. Choose a folder inside Root Footage. Each batch can use a different review folder."
+        />
+        <FolderField
+          label="Plan folder"
+          required
+          value={form.dataDir}
+          disabled={busy}
+          onChange={(dataDir) => setForm({ ...form, dataDir })}
+          help="Choose a separate folder for saved plans and move records. You can type a new folder path."
+        />
         <label>
           Naming notes <span className={styles.optional}>(optional)</span>
           <textarea

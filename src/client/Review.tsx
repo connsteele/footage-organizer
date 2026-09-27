@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useBlocker, useParams } from 'react-router-dom';
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -45,6 +45,9 @@ import { batchMarkdown } from '../shared/markdown';
 import { api, download, errorText } from './api';
 import { useDraft } from './useDraft';
 import { Modal } from './Modal';
+import { FilenameInput } from './FilenameInput';
+import { HeldReviewTools } from './HeldReviewTools';
+import { ClipPreview } from './ClipPreview';
 import styles from './App.module.css';
 
 export function Review({ refreshProjects }: { refreshProjects: () => Promise<void> }) {
@@ -116,6 +119,7 @@ function ReviewSession({
   reload: () => Promise<void>;
 }) {
   const project = state.project;
+  const navigate = useNavigate();
   const {
     batch,
     status,
@@ -128,7 +132,7 @@ function ReviewSession({
     canRedo,
   } = useDraft(project.id, initial);
   const [search, setSearch] = useState('');
-  const [onlyHeld, setOnlyHeld] = useState(false);
+  const [clipView, setClipView] = useState<'remaining' | 'held' | 'filed' | 'all'>('remaining');
   const [error, setError] = useState('');
   const [review, setReview] = useState<MoveReview | null>(null);
   const [checking, setChecking] = useState(false);
@@ -136,6 +140,7 @@ function ReviewSession({
   const [folder, setFolder] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [active, setActive] = useState<number | null>(null);
+  const [previewClip, setPreviewClip] = useState<number | null>(null);
   const [knownFolders, setKnownFolders] = useState<string[]>([]);
   const [executing, setExecuting] = useState<Operation | null>(
     state.operations.find((o) => o.batchId === batch.id && o.status === 'running') || null,
@@ -176,11 +181,19 @@ function ReviewSession({
   ].sort();
   const choices = [...new Set(['', ...folders, ...knownFolders])].sort();
   const pending = batch.clips.filter(isPending).length;
-  const held = batch.clips.filter((c) => c.held).length;
+  const held = batch.clips.filter((c) => c.held && !c.applied).length;
   const moved = batch.clips.filter((c) => c.applied).length;
+  const remaining = batch.clips.length - moved;
+  const views = [
+    { value: 'remaining', label: 'Remaining', count: remaining },
+    { value: 'held', label: 'Held', count: held },
+    { value: 'filed', label: 'Filed', count: moved },
+    { value: 'all', label: 'All', count: batch.clips.length },
+  ] as const;
   const filtered = batch.clips.filter(
     (c) =>
-      (!onlyHeld || c.held) &&
+      (clipView === 'all' ||
+        (clipView === 'filed' ? c.applied : !c.applied && (clipView !== 'held' || c.held))) &&
       [
         String(c.id),
         clipLabel(c.id),
@@ -188,9 +201,18 @@ function ReviewSession({
         targetPath(c),
         c.note,
         c.original.rationale,
+        c.agentReview?.rationale ?? '',
       ].some((v) => v.toLowerCase().includes(search.toLowerCase())),
   );
   const totalSeconds = batch.clips.reduce((n, c) => n + (c.original.duration || 0), 0);
+  async function startNextBatch() {
+    try {
+      await flush();
+      navigate(`/projects/${project.id}/next-batch`);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
   function editClip(id: number, update: (clip: BatchClip) => void) {
     change((draft) => {
       const clip = draft.clips.find((c) => c.id === id)!;
@@ -199,6 +221,7 @@ function ReviewSession({
     setReview(null);
   }
   async function checkMoves() {
+    setPreviewClip(null);
     setChecking(true);
     setError('');
     try {
@@ -269,30 +292,42 @@ function ReviewSession({
               day: 'numeric',
             })}
           </p>
+          {batch.reviewFolder !== undefined && (
+            <p>Review Footage: {batch.reviewFolder || 'Root Footage'}</p>
+          )}
         </div>
-        <button
-          className={styles.secondary}
-          disabled={locked}
-          onClick={async () => {
-            try {
-              await flush();
-              const saved = await api<ProjectState>(`/projects/${project.id}`);
-              download(
-                `${batch.id}.md`,
-                batchMarkdown(
-                  saved.project,
-                  saved.batches.find((b) => b.id === batch.id)!,
-                  saved.operations,
-                ),
-                'text/markdown',
-              );
-            } catch (e) {
-              setError(errorText(e));
-            }
-          }}
-        >
-          <Download size={16} /> Export Markdown
-        </button>
+        <div className={styles.headingActions}>
+          <button
+            className={styles.secondary}
+            disabled={locked}
+            onClick={async () => {
+              try {
+                await flush();
+                const saved = await api<ProjectState>(`/projects/${project.id}`);
+                download(
+                  `${batch.id}.md`,
+                  batchMarkdown(
+                    saved.project,
+                    saved.batches.find((b) => b.id === batch.id)!,
+                    saved.operations,
+                  ),
+                  'text/markdown',
+                );
+              } catch (e) {
+                setError(errorText(e));
+              }
+            }}
+          >
+            <Download size={16} /> Export Markdown
+          </button>
+          <button
+            className={pending ? styles.secondary : styles.primary}
+            disabled={locked}
+            onClick={() => void startNextBatch()}
+          >
+            <Plus size={18} /> Start next batch
+          </button>
+        </div>
       </div>
       {(error || saveError) && (
         <div className={styles.error} role="alert">
@@ -318,7 +353,7 @@ function ReviewSession({
         </div>
         <div>
           <b>{held}</b>
-          <span>Held for later</span>
+          <span>Held for review</span>
         </div>
         <div>
           <b>{moved}</b>
@@ -355,6 +390,28 @@ function ReviewSession({
           </label>
         </div>
       </details>
+      <HeldReviewTools
+        projectId={project.id}
+        batch={batch}
+        locked={locked}
+        flush={flush}
+        reload={reload}
+      />
+      <div className={styles.clipFilters} role="group" aria-label="Clip status">
+        {views.map((view) => (
+          <button
+            key={view.value}
+            className={`${styles.filterButton} ${clipView === view.value ? styles.filterActive : ''}`}
+            aria-pressed={clipView === view.value}
+            onClick={() => {
+              setPreviewClip(null);
+              setClipView(view.value);
+            }}
+          >
+            {view.label} <span>{view.count}</span>
+          </button>
+        ))}
+      </div>
       <div className={styles.toolbar}>
         <label className={styles.search}>
           <Search size={17} />
@@ -364,14 +421,6 @@ function ReviewSession({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </label>
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={onlyHeld}
-            onChange={(e) => setOnlyHeld(e.target.checked)}
-          />
-          Held only
         </label>
         <div className={styles.toolbarEnd}>
           <button
@@ -392,14 +441,30 @@ function ReviewSession({
           >
             <Redo2 size={17} />
           </button>
-          <button className={styles.secondary} disabled={locked} onClick={() => setAdding(true)}>
+          <button
+            className={styles.secondary}
+            disabled={locked || clipView === 'filed'}
+            onClick={() => setAdding(true)}
+          >
             <Plus size={16} /> Folder
           </button>
         </div>
       </div>
       <div className={styles.listHeading}>
-        <span>PROPOSED PLACEMENTS</span>
-        <span>Drag a clip into a folder, or open Details to choose its destination.</span>
+        <span>
+          {clipView === 'remaining'
+            ? 'REMAINING CLIPS'
+            : clipView === 'held'
+              ? 'HELD FOR REVIEW'
+              : clipView === 'filed'
+                ? 'FILED CLIPS'
+                : 'ALL CLIPS'}
+        </span>
+        <span>
+          {clipView === 'filed'
+            ? 'Completed placements are kept here for reference.'
+            : 'Drag a clip into a folder, or open Details to choose its destination.'}
+        </span>
       </div>
       <DndContext
         sensors={sensors}
@@ -416,7 +481,11 @@ function ReviewSession({
         <div className={styles.folderList}>
           {folders.map((folderName) => {
             const clips = filtered.filter((c) => c.proposed.folder === folderName);
-            if (!clips.length && (search || onlyHeld) && active === null) return null;
+            const emptyDestination =
+              !search &&
+              (clipView === 'all' || (clipView === 'remaining' && remaining > 0)) &&
+              !batch.clips.some((c) => c.proposed.folder === folderName);
+            if (!clips.length && active === null && !emptyDestination) return null;
             return (
               <FolderGroup
                 key={folderName}
@@ -424,7 +493,7 @@ function ReviewSession({
                 count={clips.length}
                 isNew={!knownFolders.includes(folderName) && !!folderName}
                 onRename={
-                  locked
+                  locked || clipView === 'filed'
                     ? undefined
                     : () => {
                         setRenaming(folderName);
@@ -439,6 +508,9 @@ function ReviewSession({
                     clip={clip}
                     choices={choices}
                     locked={locked}
+                    prefix={prefix}
+                    previewOpen={previewClip === clip.id && !locked}
+                    onPreview={() => setPreviewClip(previewClip === clip.id ? null : clip.id)}
                     onChange={(update) => editClip(clip.id, update)}
                     onPlay={async () => {
                       try {
@@ -456,8 +528,31 @@ function ReviewSession({
               </FolderGroup>
             );
           })}
-          {!filtered.length && (search || onlyHeld) && (
-            <div className={styles.empty}>No clips match this filter.</div>
+          {!filtered.length && (
+            <div className={styles.empty}>
+              {search ? (
+                <>
+                  <h3>No matching clips in this view</h3>
+                  <p>Clear the search or choose another status above.</p>
+                </>
+              ) : clipView === 'remaining' ? (
+                <>
+                  <h3>All clips filed</h3>
+                  <p>This batch is saved. Start your next batch whenever you are ready.</p>
+                  <button className={styles.textButton} onClick={() => setClipView('filed')}>
+                    View filed clips
+                  </button>
+                </>
+              ) : (
+                <h3>
+                  {clipView === 'held'
+                    ? 'No clips held for review'
+                    : clipView === 'filed'
+                      ? 'No filed clips yet'
+                      : 'No clips in this batch'}
+                </h3>
+              )}
+            </div>
           )}
         </div>
         <DragOverlay>
@@ -529,15 +624,21 @@ function ReviewSession({
         <div>
           <strong>
             {pending
-              ? `${pending} clips ready for review`
+              ? `${pending} clips ready to move`
               : held
-                ? `${held} clips held for later`
-                : 'Everything is in place'}
+                ? `${held} clips held for review`
+                : remaining
+                  ? 'No pending moves'
+                  : 'All clips filed'}
           </strong>
           <span>
-            {held
-              ? `${held} held clips will stay where they are.`
-              : 'Your edits become file changes after you confirm.'}
+            {pending && (search || clipView === 'held' || clipView === 'filed')
+              ? 'Move clips includes all pending placements in this batch; held clips stay in place.'
+              : held
+                ? `${held} held clips will stay where they are.`
+                : remaining
+                  ? 'Your edits become file changes after you confirm.'
+                  : 'Filed clips and notes remain available in the Filed view.'}
           </span>
         </div>
         <div className={styles.inlineActions}>
@@ -559,15 +660,25 @@ function ReviewSession({
           >
             Export plan
           </button>
-          <button
-            className={styles.primary}
-            disabled={!pending || checking || locked || status === 'error'}
-            onClick={() => void checkMoves()}
-          >
-            {checking ? <LoaderCircle size={17} className={styles.spin} /> : <Folder size={17} />}
-            {checking ? 'Checking files…' : `Move clips · ${pending}`}
-            <ArrowRight size={17} />
-          </button>
+          {pending ? (
+            <button
+              className={styles.primary}
+              disabled={!pending || checking || locked || status === 'error'}
+              onClick={() => void checkMoves()}
+            >
+              {checking ? <LoaderCircle size={17} className={styles.spin} /> : <Folder size={17} />}
+              {checking ? 'Checking files…' : `Move clips · ${pending}`}
+              <ArrowRight size={17} />
+            </button>
+          ) : (
+            <button
+              className={styles.primary}
+              disabled={locked}
+              onClick={() => void startNextBatch()}
+            >
+              <Plus size={18} /> Start next batch
+            </button>
+          )}
         </div>
       </div>
       {adding && (
@@ -634,7 +745,8 @@ function ReviewSession({
         >
           <p>
             {review.items.length} clips will be moved or renamed. {review.held} held ·{' '}
-            {review.unchanged} unchanged. This includes clips hidden by your search filter.
+            {review.unchanged} unchanged. This includes pending clips hidden by search or status
+            filters.
           </p>
           {review.issues.length > 0 && (
             <div className={styles.error} role="alert">
@@ -816,20 +928,27 @@ function ClipRow({
   locked,
   onChange,
   onPlay,
+  prefix,
+  previewOpen,
+  onPreview,
 }: {
   clip: BatchClip;
   choices: string[];
   locked: boolean;
   onChange: (update: (clip: BatchClip) => void) => void;
   onPlay: () => void;
+  prefix: string;
+  previewOpen: boolean;
+  onPreview: () => void;
 }) {
   const [details, setDetails] = useState(false);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: clip.id,
     disabled: locked || clip.applied,
   });
-  const originalName = clip.currentPath.split('/').at(-1);
-  const renamed = originalName !== clip.proposed.filename;
+  const currentName = clip.currentPath.split('/').at(-1) ?? clip.currentPath;
+  const questions = clip.agentReview?.questions ?? clip.original.questions;
+  const renamed = currentName !== clip.proposed.filename;
   const movedFolder = clip.currentPath.split('/').slice(0, -1).join('/') !== clip.proposed.folder;
   const status = clip.applied
     ? 'Filed'
@@ -859,19 +978,36 @@ function ClipRow({
         </button>
         <span className={styles.clipId}>{clipLabel(clip.id)}</span>
         <div className={styles.clipName}>
-          <input
-            aria-label={`Filename for clip ${clipLabel(clip.id)}`}
-            value={clip.proposed.filename}
-            disabled={locked || clip.applied}
-            onChange={(e) =>
-              onChange((c) => {
-                c.proposed.filename = e.target.value;
-              })
-            }
-            spellCheck={false}
-          />
-          <span title={clip.currentPath}>
-            {renamed ? `Current: ${originalName}` : clip.original.rationale || clip.currentPath}
+          <span className={styles.filenameLabel}>New:</span>
+          <div className={styles.proposedFilename}>
+            <FilenameInput
+              label={`Filename for clip ${clipLabel(clip.id)}`}
+              value={clip.proposed.filename}
+              disabled={locked || clip.applied}
+              onChange={(filename) =>
+                onChange((c) => {
+                  c.proposed.filename = filename;
+                })
+              }
+            />
+            <button
+              type="button"
+              className={styles.restoreFilename}
+              aria-label={`Use current filename for clip ${clipLabel(clip.id)}`}
+              title={renamed ? 'Use the current filename' : 'Already using the current filename'}
+              disabled={locked || clip.applied || !renamed}
+              onClick={() =>
+                onChange((c) => {
+                  c.proposed.filename = currentName;
+                })
+              }
+            >
+              <RotateCcw size={16} />
+            </button>
+          </div>
+          <span className={styles.currentFilenameLabel}>Current:</span>
+          <span className={styles.currentFilename} title={clip.currentPath}>
+            {currentName}
           </span>
         </div>
         <span className={styles.duration}>{durationLabel(clip.original.duration)}</span>
@@ -884,10 +1020,19 @@ function ClipRow({
           aria-label={`Open clip ${clipLabel(clip.id)} in player`}
           className={styles.iconButton}
           disabled={locked}
-          title="Open in player"
+          title="Open in external player"
           onClick={onPlay}
         >
           <Play size={16} />
+        </button>
+        <button
+          className={styles.detailsButton}
+          disabled={locked}
+          aria-expanded={previewOpen}
+          aria-label={`Preview clip ${clipLabel(clip.id)}`}
+          onClick={onPreview}
+        >
+          Preview <ChevronDown size={13} />
         </button>
         <button
           className={styles.detailsButton}
@@ -899,16 +1044,24 @@ function ClipRow({
           <ChevronDown size={13} />
         </button>
       </div>
+      {previewOpen && (
+        <ClipPreview
+          key={`${prefix}-${clip.id}`}
+          prefix={prefix}
+          clipId={clip.id}
+          onExternal={onPlay}
+        />
+      )}
       {clip.importIssue && (
         <p className={styles.rowWarning}>
           <AlertCircle size={14} />
           {clip.importIssue}
         </p>
       )}
-      {clip.original.questions.length > 0 && (
+      {questions.length > 0 && (
         <p className={styles.rowQuestion}>
           <AlertCircle size={14} />
-          {clip.original.questions.join(' · ')}
+          {questions.join(' · ')}
         </p>
       )}
       {details && (
@@ -939,10 +1092,17 @@ function ClipRow({
               {clip.currentPath}
             </p>
             <p>
-              <b>Review rationale</b>
+              <b>Original review rationale</b>
               <br />
               {clip.original.rationale || 'No additional rationale.'}
             </p>
+            {clip.agentReview && (
+              <p>
+                <b>Latest agent follow-up</b>
+                <br />
+                {clip.agentReview.rationale || 'No additional rationale.'}
+              </p>
+            )}
             {clip.original.markers.length > 0 && (
               <div>
                 <b>Markers</b>
@@ -982,7 +1142,7 @@ function ClipRow({
                     })
                   }
                 />
-                <Pause size={14} /> Hold for later
+                <Pause size={14} /> Hold for review
               </label>
               <button
                 className={styles.textButton}

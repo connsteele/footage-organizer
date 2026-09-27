@@ -12,6 +12,8 @@ The catalog includes previously imported clips, not every file on disk. Obtain t
 
 Paths and proposed folders are relative to the footage root, with `/` separators. No drive letters or `..` segments. The app's registered root controls where operations are allowed.
 
+**Root Footage** is the project's permanent library. **Review Footage** is this batch's incoming folder inside that root. When the kit has `reviewInventory`, use its root-relative file paths and real size/timestamp values; copy `reviewInventory.folder` to `reviewFolder`. Files marked with `existingClipId` are already tracked; leave them out of a new batch unless explicitly asked to reorganize them. Use the held-clip update workflow for an existing batch. The inventory is a scoped disk listing, not video analysis. When importing through the kit page, the selected Review Footage folder takes precedence; every source must be inside it.
+
 Reuse existing project clip IDs. New clips take IDs above the existing maximum. Never renumber due to sorting or changed placement. Current paths must match the catalog. Each new handoff needs new `handoffId` and `batchId` values (letters, digits, hyphens, underscores; at most 80 characters).
 
 ## Example
@@ -54,23 +56,24 @@ A separate [example file](examples/handoff.v1.json) shows both a ready clip and 
 
 ## Fields
 
-| Field                                                     | Requirement                                                                             |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `schemaVersion`                                           | Exactly `1`                                                                             |
-| `handoffId`, `projectId`, `batchId`, `title`, `createdAt` | Required; creation time is an ISO UTC timestamp                                         |
-| `clips`                                                   | 1–10,000 records with unique IDs and source paths                                       |
-| `id`                                                      | Positive integer, stable within the project                                             |
-| `source.relativePath`                                     | Required current path relative to the footage root                                      |
-| `source.size`, `source.mtimeMs`                           | Recommended review-time metadata; omit only when unavailable and explain the limitation |
-| `duration`                                                | Optional number or null                                                                 |
-| `markers`                                                 | Optional array of `{seconds, label}`                                                    |
-| `proposed.filename`                                       | Required full filename with the original extension; use the actual name when unchanged  |
-| `proposed.folder`                                         | Required relative folder; `""` means the media root                                     |
-| `rationale`                                               | Optional explanation                                                                    |
-| `questions`                                               | Optional unresolved questions; any questions start the clip held                        |
-| `hold`                                                    | Optional explicit hold, default false                                                   |
-| `folders`                                                 | Optional folder groups, including empty groups                                          |
-| `reviewNotes`                                             | Optional audit, decisions, and review limitations                                       |
+| Field                                                     | Requirement                                                                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion`                                           | Exactly `1`                                                                                                                               |
+| `handoffId`, `projectId`, `batchId`, `title`, `createdAt` | Required; creation time is an ISO UTC timestamp                                                                                           |
+| `clips`                                                   | 1–10,000 records with unique IDs and source paths                                                                                         |
+| `id`                                                      | Positive integer, stable within the project                                                                                               |
+| `source.relativePath`                                     | Required current path relative to the footage root                                                                                        |
+| `source.size`, `source.mtimeMs`                           | Recommended review-time metadata; omit only when unavailable and explain the limitation                                                   |
+| `duration`                                                | Optional number or null                                                                                                                   |
+| `markers`                                                 | Optional array of `{seconds, label}`                                                                                                      |
+| `proposed.filename`                                       | Required full filename with the original extension; use the actual name when unchanged                                                    |
+| `proposed.folder`                                         | Required relative folder; `""` means the media root                                                                                       |
+| `rationale`                                               | Optional explanation                                                                                                                      |
+| `questions`                                               | Optional unresolved questions; any questions start the clip held                                                                          |
+| `hold`                                                    | Optional explicit hold, default false                                                                                                     |
+| `folders`                                                 | Optional folder groups, including empty groups                                                                                            |
+| `reviewNotes`                                             | Optional audit, decisions, and review limitations                                                                                         |
+| `reviewFolder`                                            | Optional folder relative to Root Footage; `""` selects the root. Include the kit's folder for new batches. All sources must be inside it. |
 
 The [JSON schema](handoff.schema.json) is generated from the model used by the backend. Import checks supplied review metadata. Changed sources remain visible but cannot move from that batch; produce a fresh handoff after reviewing them.
 
@@ -88,13 +91,15 @@ npm run validate:handoff -- path/to/handoff.json
 
 The validator reads the handoff without importing or moving anything. The schema validates structure; additional rules validate paths, unique IDs/sources, filenames, and preservation of the original extension. Filesystem and catalog checks still happen in the app. Regenerate the published schema with `npm run schema` when changing the runtime model.
 
-Use relative paths with `/` separators and no leading slash, drive letter, empty segment, `.` or `..`. Only `proposed.folder` and entries in `folders` may be `""` for the media root. Filenames and folder segments must be valid Windows names: no reserved device names, `< > : " / \\ | ? *`, control characters, or trailing dot/space. Each segment is at most 255 characters. Compare source paths without case sensitivity when checking duplicates.
+Use relative paths with `/` separators and no leading slash, drive letter, empty segment, `.` or `..`. `reviewFolder`, `proposed.folder`, and entries in `folders` may be `""` for the media root. Filenames and folder segments must be valid Windows names: no reserved device names, `< > : " / \\ | ? *`, control characters, or trailing dot/space. Each segment is at most 255 characters. Compare source paths without case sensitivity when checking duplicates.
 
 Keep the original extension, including when leaving a name unchanged. Avoid case-only renames and overlapping destination names. The app currently supports regular files on the same volume, not copies, transcoding, cross-volume transfers, linked paths, or automatic rollback. A JSON schema alone cannot prove that a file exists or a target is available.
 
 ## Reimports and revisions
 
 Reimporting a handoff ID reopens the existing saved batch without replacing edits, even if the incoming content changed. A different handoff cannot reuse a batch ID. Revised handoffs need new IDs and current source paths. Merging into an edited batch or automatically replacing an older pending batch is not supported. Preserve the user's decisions when revising a proposal and identify which earlier batch it revises in `reviewNotes`.
+
+To revisit held clips within the same batch, use **Agent follow-up → Export held clips for review** instead. Return the separate [batch-update format](BATCH_UPDATES.md) with the saved request ID. **Import batch update** previews selected suggestions, checks conflicts, preserves notes/history, and keeps clips held. This does not create a new batch. Full-batch replacement through a normal handoff remains unsupported.
 
 ## Delivery
 

@@ -22,6 +22,12 @@ React sends HTTP requests to Express. The `Organizer` service handles imports, e
 
 All mutations are serialized. A running move blocks plan mutations. Each batch edit supplies its expected revision, so a stale browser cannot overwrite newer data. Autosave queues edits made during an earlier save and uses the returned revision.
 
+## Review folders and follow-up updates
+
+Projects have an optional root-relative `reviewFolder` default; batches record their own chosen folder. Optional fields preserve compatibility with existing state. `reviewFolders.ts` validates containment and rejects linked roots, then inventories supported media with catalog IDs and batch membership. Folder paths entered in the UI may be absolute or relative; stored paths are relative. `folderPicker.ts` is a Windows native dialog adapter with paths passed as environment data, protected by the same mutation token as other local actions.
+
+`reviewUpdates.ts` saves held-clip request snapshots and accepts strict `batch-update` payloads. Exporting a snapshot increments the project state revision but not the batch decision revision, so existing drafts remain valid. Preview and apply compare notes, decisions, proposals, source identity/location, and held/filed status against the exported request. Apply rechecks everything within Store's serial queue and requires the preview's batch revision. Selected proposals and agent explanations change; user notes, original imports, and before/after history remain. Clips stay held, and no filesystem moves occur. Reused update IDs require identical normalized payloads; accepted clip IDs cannot be applied twice. Saving ordinary batch edits preserves this metadata. The client downloads a self-contained protocol/schema/example in `heldReviewKit.ts` and shows comparison and history in `HeldReviewTools.tsx`.
+
 ## Moves
 
 Preflight creates an expiring server review tied to project, batch, and revision. The move endpoint accepts that review ID, rechecks files, and records an operation using the same ID. Repeated requests reconnect to that operation.
@@ -39,6 +45,12 @@ On restart, interrupted operations are reconciled without issuing new moves:
 - Uncertain identity/location: mark ambiguous and block new moves for that batch.
 
 Check recovery repeats inspection after the user resolves paths. Completed items are not rolled back. A new execution review includes only pending work. The filesystem batch is not a single transaction.
+
+## Project removal and media preview
+
+Project removal is serialized with other mutations and blocked during moves. `removed-projects.json` in the app registry records a removed-project snapshot before registration is removed. Retained plan folders can be reopened; active folders are excluded from the cleanup list and rejected by cleanup even if an old removal ID is submitted. `projectCleanup.ts` verifies canonical paths, saved project identity, active-project overlap, and managed records before deleting known app JSON/Markdown files. It never recursively deletes a chosen directory. It keeps the authoritative state until the other records are removed, releases the plan lock, and only removes empty directories. Unrelated files remain. A partial cleanup failure keeps the removal entry available for retry; deletion is not a filesystem transaction.
+
+`media.ts` issues temporary read-only capabilities for individual catalog clips through a session-protected POST. Native video requests use these URLs without exposing the app's mutation token. Each stream/range request revalidates the catalog path and file identity, uses same-origin resource policy, and refuses moved, changed, deleted, or expired targets. Express streams files and handles byte ranges and HEAD. No browser blob buffering or media conversion occurs. Only one `ClipPreview` mounts per review view; it releases the video source on collapse/unmount, and move review closes it before execution. The external-player action remains independent.
 
 ## Local operation
 
