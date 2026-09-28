@@ -1,4 +1,4 @@
-export type PreviewMarker = { seconds: number; label: string };
+export type PreviewMarker = { seconds: number; label: string; id?: string; chapterIndex?: number };
 export type MediaInfo = {
   markers: PreviewMarker[];
   video: {

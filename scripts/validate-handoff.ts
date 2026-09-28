@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { handoffSchema } from '../src/shared/model.js';
 import { filenameProblem, relativePath } from '../src/server/paths.js';
+import { validateMarkerProposals } from '../src/shared/markers.js';
 
 export function validateHandoff(input: unknown) {
   const handoff = handoffSchema.parse(input);
@@ -14,6 +15,7 @@ export function validateHandoff(input: unknown) {
       : relativePath(handoff.reviewFolder, true).toLowerCase();
   for (const folder of handoff.folders) relativePath(folder, true);
   for (const clip of handoff.clips) {
+    validateMarkerProposals(clip.markers, clip.markerProposals);
     if (ids.has(clip.id)) throw new Error(`Duplicate clip ID: ${clip.id}`);
     ids.add(clip.id);
     const source = relativePath(clip.source.relativePath);

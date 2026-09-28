@@ -4,10 +4,15 @@ import { Organizer } from './service.js';
 import { Store } from './store.js';
 import { createApp } from './app.js';
 import { inspectMedia } from './mediaInfo.js';
+import { MarkerWriter } from './markerWriter.js';
 
 const config = await loadConfig();
 const store = new Store(config.dataDir);
-const service = new Organizer(store);
+const service = new Organizer(
+  store,
+  undefined,
+  new MarkerWriter(config.ffmpegPath, config.ffprobePath),
+);
 try {
   await service.initialize();
 } catch (error) {

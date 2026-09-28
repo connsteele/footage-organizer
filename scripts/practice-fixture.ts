@@ -34,7 +34,7 @@ export function practiceHandoff(startId = 1): Handoff {
     {
       group: '04 Video and markers',
       source: 'Preview - scrub and click markers.mp4',
-      help: 'Open Preview to play this 12-second test pattern. Click imported marker ticks at 2 and 6 seconds, and embedded chapter ticks at 0, 4 and 9 seconds. Hover for names; open Marker list and Playback info. Markers are read-only: this app does not rename or rewrite them.',
+      help: 'Open Preview to play this 12-second test pattern. Click imported marker ticks at 2 and 6 seconds, and embedded chapter ticks at 0, 4 and 9 seconds. Hover for names; open Marker list and Playback info. See example 10 to review embedded marker names before refining the clip name.',
     },
     {
       group: '05 Held review',
@@ -60,6 +60,12 @@ export function practiceHandoff(startId = 1): Handoff {
       source: 'Drag me into another destination.mp4',
       help: 'This proposed destination does not exist yet. It is created only when a move needs it. Drag this clip to the empty “09 Try dropping a clip here” group, or choose a destination in Details. Undo restores the prior proposal.',
     },
+    {
+      group: '10 Markers first then clip name',
+      source: 'Raw marker names - review events.mp4',
+      name: 'Test pattern - beginning motion and final colors.mp4',
+      help: 'Review the marker suggestions first: accept the first name, keep the second original, and edit then accept the third. Preview shows your accepted names immediately, but the file changes only when you confirm Move clips. The proposed clip name summarizes the sequence of marked events. Try Undo/Redo, Export markers, or hold this clip for an agent follow-up. After filing, Preview reads the new embedded labels; the move log records the retained original.',
+    },
   ];
   return {
     schemaVersion: 1,
@@ -73,8 +79,8 @@ export function practiceHandoff(startId = 1): Handoff {
       'These are generated practice videos. Each numbered folder demonstrates a feature; open Details for the steps. No real footage is included.',
       'Start with Rename only, Move only, and Rename and move. Try restoring a name, Undo/Redo, dragging, and a new destination folder. Open Video and markers to practice playback and marker seeking.',
       'Held review starts held; leave a question in Your note and export it through Agent follow-up. Unchanged clip is deliberately skipped by Move clips and stays in Remaining.',
-      'With the initial suggestions, Move clips includes six clips, skips one held clip and one unchanged clip. After filing, use Filed or All to inspect completed work, then Start next batch to see the handoff workflow.',
-      'Marker limits: handoff markers and embedded chapters can be displayed and sought. Marker rename proposals, acceptance, and writing new labels into video files are not implemented. New-batch kits list files but do not extract their markers.',
+      'With the initial suggestions, Move clips includes seven clips, skips one held clip and one unchanged clip. After filing, use Filed or All to inspect completed work, then Start next batch to see the handoff workflow.',
+      'Example 10: review marker names before naming the clip. Accept, edit, or keep originals in Details. Accepted embedded names are written only with Move clips, keeping an original backup. Start next batch includes embedded marker extraction in its kit. Editor-only markers remain export-only.',
     ].join('\n\n'),
     folders: [`${filed}/09 Try dropping a clip here`],
     clips: examples.map((item, index) => ({
@@ -82,12 +88,14 @@ export function practiceHandoff(startId = 1): Handoff {
       source: { relativePath: `${practiceReviewFolder}/${item.group}/${item.source}` },
       duration: 12,
       markers:
-        index === 3
-          ? [
-              { seconds: 2, label: 'Imported marker - jump to 2 seconds' },
-              { seconds: 6, label: 'Imported marker - compare at 6 seconds' },
-            ]
-          : [],
+        index === 8
+          ? practiceEmbeddedMarkers()
+          : index === 3
+            ? [
+                { seconds: 2, label: 'Imported marker - jump to 2 seconds' },
+                { seconds: 6, label: 'Imported marker - compare at 6 seconds' },
+              ]
+            : [],
       proposed: {
         folder: item.destination || `${filed}/${item.group}`,
         filename: item.name || item.source,
@@ -95,8 +103,39 @@ export function practiceHandoff(startId = 1): Handoff {
       rationale: item.help,
       questions: item.question ? [item.question] : [],
       hold: !!item.question,
+      ...(index === 8
+        ? {
+            markerProposals: {
+              schemaVersion: 1 as const,
+              items: practiceEmbeddedMarkers().map((m, i) => ({
+                markerId: m.id!,
+                seconds: m.seconds,
+                originalLabel: m.label,
+                proposedLabel: [
+                  'Test pattern begins',
+                  'Color motion midpoint',
+                  'Final color pattern',
+                ][i],
+                rationale:
+                  'Name the visible event before summarizing this sequence in the clip filename.',
+              })),
+            },
+          }
+        : {}),
     })),
   };
+}
+function practiceEmbeddedMarkers() {
+  return [0, 4, 9].map((seconds, chapterIndex) => ({
+    id: `embedded-${chapterIndex + 1}`,
+    chapterIndex,
+    seconds,
+    label: [
+      'Embedded chapter - start',
+      'Embedded chapter - middle',
+      'Embedded chapter - near the end',
+    ][chapterIndex],
+  }));
 }
 
 export async function createPracticeHandoff(
@@ -104,8 +143,10 @@ export async function createPracticeHandoff(
   tempDir: string,
   startId = 1,
   ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg',
+  markerLessonOnly = false,
 ) {
   const handoff = practiceHandoff(startId);
+  if (markerLessonOnly) handoff.clips = [{ ...handoff.clips.at(-1)!, id: startId }];
   await mkdir(media, { recursive: true });
   await mkdir(tempDir, { recursive: true });
   const scratch = await mkdtemp(path.join(tempDir, 'practice-feature-tour-'));
@@ -174,7 +215,7 @@ export async function createPracticeHandoff(
       options,
     );
     for (const [index, clip] of handoff.clips.entries()) {
-      const sample = index === 3 ? marked : plain;
+      const sample = clip.markers.length ? marked : plain;
       const file = await safePath(media, clip.source.relativePath, true);
       try {
         await copyFile(sample, file, constants.COPYFILE_EXCL);

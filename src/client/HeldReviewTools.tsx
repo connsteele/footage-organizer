@@ -233,6 +233,18 @@ export function HeldReviewTools({
                   </p>
                 )}
                 <p>{item.suggestion.rationale}</p>
+                {item.suggestion.markerProposals && (
+                  <div>
+                    <b>Marker suggestions — added for individual review</b>
+                    {item.suggestion.markerProposals.items.map((m) => (
+                      <p key={m.markerId}>
+                        {m.seconds}s: {m.originalLabel || '(unnamed)'} → {m.proposedLabel}
+                        <br />
+                        {m.rationale}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {!!item.suggestion.questions.length && (
                   <p>Still unresolved: {item.suggestion.questions.join(' · ')}</p>
                 )}

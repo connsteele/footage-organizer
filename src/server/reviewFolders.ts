@@ -1,7 +1,16 @@
 import path from 'node:path';
 import { readdir } from 'node:fs/promises';
 import type { ProjectState, ReviewInventory } from '../shared/model.js';
-import { AppError, canonicalRoot, fingerprint, relativePath, safePath, within } from './paths.js';
+import {
+  AppError,
+  canonicalRoot,
+  fingerprint,
+  relativePath,
+  safePath,
+  sameFile,
+  within,
+} from './paths.js';
+import { inspectMedia } from './mediaInfo.js';
 
 export async function resolveReviewFolder(root: string, folder: string) {
   const absolute = path.isAbsolute(folder)
@@ -31,6 +40,7 @@ const mediaExtensions = new Set([
 export async function reviewInventory(
   state: ProjectState,
   folder: string,
+  options: { includeMarkers?: boolean; probe?: typeof inspectMedia; budgetMs?: number } = {},
 ): Promise<ReviewInventory> {
   const root = state.project.mediaRoot;
   const relative = await resolveReviewFolder(root, folder);
@@ -78,5 +88,52 @@ export async function reviewInventory(
   }
   await scan(result.absoluteFolder, 0);
   result.files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  if (options.includeMarkers) {
+    const probe = options.probe ?? inspectMedia;
+    const deadline = Date.now() + (options.budgetMs ?? 60000);
+    let cursor = 0;
+    let markerBytes = 0;
+    // Bound concurrent disk/probe work and return an explicit status for every file.
+    await Promise.all(
+      Array.from({ length: 3 }, async () => {
+        while (cursor < result.files.length) {
+          const index = cursor++,
+            entry = result.files[index];
+          if (index >= 500 || Date.now() >= deadline) {
+            entry.markerStatus = 'not-scanned';
+            entry.markerNote =
+              'Marker scan limit reached. Choose a smaller review folder, or supply markers separately.';
+            continue;
+          }
+          try {
+            const file = await safePath(root, entry.relativePath),
+              before = await fingerprint(file);
+            const info = await probe(file);
+            if (
+              !sameFile(before, await fingerprint(file)) ||
+              before.size !== entry.size ||
+              Math.abs(before.mtimeMs - entry.mtimeMs) > 1
+            )
+              throw new Error('File changed during marker extraction. Download a fresh kit.');
+            if (info.note) throw new Error(info.note);
+            const bytes = Buffer.byteLength(JSON.stringify(info.markers));
+            if (markerBytes + bytes > 4 * 1024 * 1024) {
+              entry.markerStatus = 'not-scanned';
+              entry.markerNote =
+                'Marker export size limit reached. Choose a smaller review folder.';
+              continue;
+            }
+            markerBytes += bytes;
+            entry.markers = info.markers;
+            entry.markerStatus = 'read';
+          } catch (error) {
+            entry.markerStatus = 'unavailable';
+            entry.markerNote =
+              error instanceof Error ? error.message : 'Markers could not be read.';
+          }
+        }
+      }),
+    );
+  }
   return result;
 }

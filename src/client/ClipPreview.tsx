@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, LoaderCircle } from 'lucide-react';
-import { clipLabel } from '../shared/model';
+import { clipLabel, type MarkerDecision } from '../shared/model';
+import { identifiedMarkers } from '../shared/markers';
 import { markerTime, previewMarkers, type MediaInfo, type PreviewMarker } from '../shared/media';
 import { api, errorText } from './api';
 import styles from './App.module.css';
@@ -9,11 +10,13 @@ export function ClipPreview({
   prefix,
   clipId,
   markers,
+  markerDecisions,
   onExternal,
 }: {
   prefix: string;
   clipId: number;
   markers: PreviewMarker[];
+  markerDecisions?: MarkerDecision[];
   onExternal: () => void;
 }) {
   const [source, setSource] = useState('');
@@ -103,7 +106,23 @@ export function ClipPreview({
       cancelled = true;
     };
   }, [info]);
-  const allMarkers = useMemo(() => previewMarkers(markers, info?.markers || []), [markers, info]);
+  const allMarkers = useMemo(() => {
+    const originals = identifiedMarkers(markers);
+    const reviewed = originals.map((m) => {
+      const decision = markerDecisions?.find((d) => d.markerId === m.id && d.status === 'accepted');
+      return { ...m, label: decision?.label ?? m.label };
+    });
+    const embedded = (info?.markers ?? []).map((m) => {
+      const original = originals.find(
+        (o) =>
+          o.chapterIndex !== undefined &&
+          o.chapterIndex === m.chapterIndex &&
+          Math.abs(o.seconds - m.seconds) < 0.001,
+      );
+      return original ? reviewed.find((r) => r.id === original.id)! : m;
+    });
+    return previewMarkers(reviewed, embedded);
+  }, [markers, markerDecisions, info]);
   const ready = duration > 0 && !error;
   function seek(seconds: number) {
     if (!video.current || !ready) return;
@@ -146,6 +165,9 @@ export function ClipPreview({
         )}
       </div>
       <div className={styles.markerTimeline}>
+        {markerDecisions?.some((d) => d.status === 'accepted') && (
+          <p className={styles.muted}>Timeline shows accepted names from this plan.</p>
+        )}
         <div className={styles.timelineHeading}>
           <span>
             {allMarkers.length} {allMarkers.length === 1 ? 'marker' : 'markers'}

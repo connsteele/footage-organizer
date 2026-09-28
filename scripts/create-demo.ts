@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { loadConfig } from '../src/server/config.js';
 import { Organizer } from '../src/server/service.js';
 import { Store } from '../src/server/store.js';
+import { upgradePracticeTour } from './upgrade-practice.js';
 import {
   createPracticeHandoff,
   practiceBatchId,
@@ -20,8 +21,11 @@ try {
   const entry = (await store.registry()).find((p) => p.id === 'practice');
   const existing = entry ? await service.projectState('practice') : undefined;
   if (existing?.batches.some((b) => b.id === practiceBatchId)) {
+    const upgraded = await upgradePracticeTour(store, config.tempDir, config.ffmpegPath);
     console.log(
-      'The practice feature tour already exists; all edits and filed clips were preserved.',
+      upgraded
+        ? 'Added the marker-review lesson to the existing feature tour. All user decisions and filed clips were preserved.'
+        : 'The practice feature tour already exists; all edits and filed clips were preserved.',
     );
   } else {
     if (existing && path.resolve(existing.project.mediaRoot).toLowerCase() !== media.toLowerCase())
@@ -29,7 +33,7 @@ try {
         'The practice project uses a different footage folder. Set FO_DEMO_DIR to its existing practice directory; no files were changed.',
       );
     const nextId = Math.max(0, ...Object.keys(existing?.catalog || {}).map(Number)) + 1;
-    const handoff = await createPracticeHandoff(media, config.tempDir, nextId);
+    const handoff = await createPracticeHandoff(media, config.tempDir, nextId, config.ffmpegPath);
     if (!existing)
       await service.createProject({
         id: 'practice',

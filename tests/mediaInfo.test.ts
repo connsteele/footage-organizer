@@ -36,7 +36,8 @@ it('reads AV1 configuration, frame rate, audio codecs and chapter times', () => 
       contentType: 'video/mp4; codecs="av01.0.13M.08"',
     },
     audio: ['flac'],
-    markers: [{ seconds: 1.234, label: 'A moment' }],
+    markers: [{ id: 'embedded-1', chapterIndex: 0, seconds: 1.234, label: 'A moment' }],
+    note: expect.stringContaining('partial list'),
   });
 });
 

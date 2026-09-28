@@ -7,6 +7,7 @@ export interface Config {
   tempDir: string;
   port: number;
   ffprobePath?: string;
+  ffmpegPath?: string;
 }
 export async function loadConfig(): Promise<Config> {
   let local: Partial<Config> = {};
@@ -21,6 +22,12 @@ export async function loadConfig(): Promise<Config> {
     tempDir: process.env.FO_TEMP_DIR || local.tempDir || os.tmpdir(),
     port: Number(process.env.PORT || local.port || 4317),
     ffprobePath: process.env.FFPROBE_PATH || local.ffprobePath || 'ffprobe',
+    ffmpegPath:
+      process.env.FFMPEG_PATH ||
+      local.ffmpegPath ||
+      (local.ffprobePath && path.isAbsolute(local.ffprobePath)
+        ? path.join(path.dirname(local.ffprobePath), 'ffmpeg.exe')
+        : 'ffmpeg'),
   };
   if (!Number.isInteger(config.port) || config.port < 1024 || config.port > 65535)
     throw new Error('Invalid server port.');

@@ -61,10 +61,7 @@
                 "maxLength": 1500
               }
             },
-            "required": [
-              "filename",
-              "folder"
-            ],
+            "required": ["filename", "folder"],
             "additionalProperties": false
           },
           "rationale": {
@@ -78,13 +75,53 @@
               "type": "string",
               "maxLength": 4000
             }
+          },
+          "markerProposals": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "items": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "markerId": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+                    },
+                    "originalLabel": {
+                      "type": "string",
+                      "maxLength": 4000
+                    },
+                    "seconds": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "proposedLabel": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "rationale": {
+                      "default": "",
+                      "type": "string",
+                      "maxLength": 4000
+                    }
+                  },
+                  "required": ["markerId", "originalLabel", "seconds", "proposedLabel"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["schemaVersion", "items"],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "id",
-          "proposed",
-          "rationale"
-        ],
+        "required": ["id", "proposed", "rationale"],
         "additionalProperties": false
       }
     }

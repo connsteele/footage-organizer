@@ -20,6 +20,7 @@ import {
   sameFile,
 } from './paths.js';
 import type { Store } from './store.js';
+import { initialMarkerDecisions, validateMarkerProposals } from '../shared/markers.js';
 
 function getBatch(state: ProjectState, id: string) {
   const batch = state.batches.find((b) => b.id === id);
@@ -85,6 +86,7 @@ export class ReviewUpdates {
           `Clip ${suggestion.id} was not included in this held-clip review request.`,
         );
       const problem = filenameProblem(suggestion.proposed.filename);
+      validateMarkerProposals(exported.original.markers, suggestion.markerProposals);
       if (problem) throw new AppError(`Clip ${suggestion.id}: ${problem}`);
       if (
         path.extname(exported.currentPath).toLowerCase() !==
@@ -103,7 +105,8 @@ export class ReviewUpdates {
         if (
           current.note !== exported.note ||
           JSON.stringify(current.proposed) !== JSON.stringify(exported.proposed) ||
-          JSON.stringify(current.agentReview) !== JSON.stringify(exported.agentReview)
+          JSON.stringify(current.agentReview) !== JSON.stringify(exported.agentReview) ||
+          JSON.stringify(current.markerDecisions) !== JSON.stringify(exported.markerDecisions)
         )
           conflicts.push('Your notes or suggestions changed after this review was exported.');
         if (
@@ -176,11 +179,38 @@ export class ReviewUpdates {
         const clip = item.current!;
         clip.proposed = { ...item.suggestion.proposed };
         clip.held = true;
+        if (item.suggestion.markerProposals) {
+          const fresh = initialMarkerDecisions(item.suggestion.markerProposals);
+          clip.markerDecisions = [
+            ...(clip.markerDecisions ?? []).filter(
+              (d) => !fresh.some((n) => n.markerId === d.markerId),
+            ),
+            ...fresh,
+          ];
+        }
         clip.agentReview = {
           updateId: body.update.updateId,
           reviewedAt: acceptedAt,
           rationale: item.suggestion.rationale,
           questions: item.suggestion.questions,
+          markerProposals: item.suggestion.markerProposals
+            ? {
+                schemaVersion: 1,
+                items: [
+                  ...(
+                    clip.agentReview?.markerProposals?.items ??
+                    clip.original.markerProposals?.items ??
+                    []
+                  ).filter(
+                    (p) =>
+                      !item.suggestion.markerProposals!.items.some(
+                        (n) => n.markerId === p.markerId,
+                      ),
+                  ),
+                  ...item.suggestion.markerProposals.items,
+                ],
+              }
+            : clip.agentReview?.markerProposals,
         };
       }
       batch.folders = [

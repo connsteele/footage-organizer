@@ -61,7 +61,12 @@ export function createApp(
     res.json({ app: 'footage-organizer', version: '0.1.0', busy: service.busy }),
   );
   app.get('/api/session', (_req, res) =>
-    res.json({ token, platform: process.platform, dataDir: service.store.dataDir }),
+    res.json({
+      token,
+      platform: process.platform,
+      dataDir: service.store.dataDir,
+      features: ['marker-review-v1'],
+    }),
   );
   app.get('/api/projects', async (_req, res) => res.json(await service.summaries()));
   app.post('/api/projects', async (req, res) =>
@@ -132,8 +137,10 @@ export function createApp(
     res.json(await service.setReviewFolder(projectId(req), folder));
   });
   app.post('/api/projects/:projectId/review-inventory', async (req, res) => {
-    const { folder } = z.object({ folder: z.string().max(1800) }).parse(req.body);
-    res.json(await service.inventory(projectId(req), folder));
+    const { folder, includeMarkers } = z
+      .object({ folder: z.string().max(1800), includeMarkers: z.boolean().default(false) })
+      .parse(req.body);
+    res.json(await service.inventory(projectId(req), folder, includeMarkers, options.mediaProbe));
   });
   app.post('/api/projects/:projectId/batches/:batchId/held-review', async (req, res) =>
     res.json(await service.updates.exportHeld(projectId(req), batchId(req))),
@@ -163,6 +170,13 @@ export function createApp(
   app.post('/api/projects/:projectId/import', async (req, res) =>
     res.json(await service.importHandoff(projectId(req), req.body)),
   );
+  app.post('/api/projects/:projectId/restore-marker-original', async (req, res) => {
+    const body = z
+      .object({ operationId: safeId, clipId: z.number().int().positive() })
+      .strict()
+      .parse(req.body);
+    res.json(await service.restoreMarkerOriginal(projectId(req), body.operationId, body.clipId));
+  });
   app.put('/api/projects/:projectId/batches/:batchId', async (req, res) =>
     res.json(await service.saveBatch(projectId(req), batchId(req), req.body)),
   );

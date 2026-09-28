@@ -75,10 +75,23 @@ export function parseMediaInfo(raw: unknown, file: string): MediaInfo {
     markers: data.chapters
       .slice(0, 10000)
       .map((chapter, index) => ({
+        id: `embedded-${index + 1}`,
+        chapterIndex: index,
         seconds: Number(chapter.start_time),
-        label: chapter.tags?.title?.slice(0, 4000) || `Chapter ${index + 1}`,
+        label: chapter.tags?.title?.slice(0, 4000) ?? '',
       }))
       .filter((m) => Number.isFinite(m.seconds) && m.seconds >= 0),
+    ...(data.chapters.length > 10000 ||
+    data.chapters.some(
+      (c) =>
+        (c.tags?.title?.length ?? 0) > 4000 ||
+        !Number.isFinite(Number(c.start_time)) ||
+        Number(c.start_time) < 0,
+    )
+      ? {
+          note: 'Some chapter information exceeded the supported limits or was invalid. Do not use this partial list for marker rewriting.',
+        }
+      : {}),
   };
 }
 

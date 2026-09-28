@@ -48,6 +48,8 @@ import { Modal } from './Modal';
 import { FilenameInput } from './FilenameInput';
 import { HeldReviewTools } from './HeldReviewTools';
 import { ClipPreview } from './ClipPreview';
+import { MarkerReview } from './MarkerReview';
+import { markerExport } from '../shared/markers';
 import { centerExpandedClip } from './clipScroll';
 import styles from './App.module.css';
 
@@ -595,6 +597,33 @@ function ReviewSession({
                     .map((i) => (
                       <p key={i.clipId}>
                         #{clipLabel(i.clipId)} — {i.error}
+                        {i.markerRewrite && i.status === 'ambiguous' && (
+                          <button
+                            className={styles.secondary}
+                            disabled={locked}
+                            onClick={async () => {
+                              try {
+                                await flush();
+                                await api(`/projects/${project.id}/restore-marker-original`, {
+                                  method: 'POST',
+                                  body: { operationId: op.id, clipId: i.clipId },
+                                });
+                                await reload();
+                              } catch (e) {
+                                setError(errorText(e));
+                              }
+                            }}
+                          >
+                            Restore original for retry
+                          </button>
+                        )}
+                      </p>
+                    ))}
+                  {op.items
+                    .filter((i) => i.markerRewrite)
+                    .map((i) => (
+                      <p key={`backup-${i.clipId}`}>
+                        #{clipLabel(i.clipId)} original backup: {i.markerRewrite!.backupPath}
                       </p>
                     ))}
                 </div>
@@ -643,6 +672,32 @@ function ReviewSession({
           </span>
         </div>
         <div className={styles.inlineActions}>
+          {batch.clips.some((c) => c.original.markers.length) && (
+            <button
+              className={styles.textButton}
+              disabled={locked}
+              onClick={async () => {
+                try {
+                  await flush();
+                  const saved = await api<ProjectState>(`/projects/${project.id}`);
+                  download(`${batch.id}-markers.json`, {
+                    schemaVersion: 1,
+                    kind: 'batch-marker-review',
+                    projectId: project.id,
+                    batchId: batch.id,
+                    clips: saved.batches
+                      .find((b) => b.id === batch.id)!
+                      .clips.filter((c) => c.original.markers.length)
+                      .map(markerExport),
+                  });
+                } catch (e) {
+                  setError(errorText(e));
+                }
+              }}
+            >
+              Export markers
+            </button>
+          )}
           <button
             className={styles.textButton}
             disabled={locked}
@@ -745,10 +800,17 @@ function ReviewSession({
           }}
         >
           <p>
-            {review.items.length} clips will be moved or renamed. {review.held} held ·{' '}
-            {review.unchanged} unchanged. This includes pending clips hidden by search or status
-            filters.
+            {review.items.length} clips will be moved, renamed, or have accepted marker names
+            written. {review.held} held · {review.unchanged} unchanged. This includes pending clips
+            hidden by search or status filters.
           </p>
+          {review.items.some((i) => i.markerChanges?.length) && (
+            <p>
+              Marker changes copy the media streams without re-encoding. Originals are retained
+              under Root Footage/.footage-organizer-originals; the move log records each backup.
+              Preparation and verification can take longer than an ordinary move.
+            </p>
+          )}
           {review.issues.length > 0 && (
             <div className={styles.error} role="alert">
               <b>Resolve these before moving</b>
@@ -772,6 +834,20 @@ function ReviewSession({
                   <p>
                     <ArrowRight size={14} /> {item.to}
                   </p>
+                  {item.markerChanges?.map((m) => (
+                    <p key={m.markerId}>
+                      Marker at {durationLabel(m.seconds)}: {m.originalLabel || '(unnamed)'} →{' '}
+                      {m.label}
+                    </p>
+                  ))}
+                  {batch.clips
+                    .find((c) => c.id === item.clipId)
+                    ?.markerDecisions?.some((d) => d.status === 'pending') && (
+                    <p className={styles.conflict}>
+                      Unreviewed marker suggestions will keep their original names. Go back to
+                      Details to review them before filing; filed decisions are locked.
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -835,6 +911,25 @@ function ReviewSession({
                 <div>
                   <p>{item.to}</p>
                   <small>{item.error || item.status}</small>
+                  {item.markerRewrite && <p>Original backup: {item.markerRewrite.backupPath}</p>}
+                  {item.markerRewrite && item.status === 'ambiguous' && (
+                    <button
+                      className={styles.secondary}
+                      onClick={async () => {
+                        try {
+                          await api(`/projects/${project.id}/restore-marker-original`, {
+                            method: 'POST',
+                            body: { operationId: executing.id, clipId: item.clipId },
+                          });
+                          await reload();
+                        } catch (e) {
+                          setError(errorText(e));
+                        }
+                      }}
+                    >
+                      Restore original for retry
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -1032,6 +1127,11 @@ function ClipRow({
         >
           {status}
         </span>
+        {!!clip.markerDecisions?.filter((d) => d.status === 'pending').length && (
+          <span className={styles.statusPill}>
+            {clip.markerDecisions.filter((d) => d.status === 'pending').length} markers to review
+          </span>
+        )}
         <button
           aria-label={`Open clip ${clipLabel(clip.id)} in player`}
           className={styles.iconButton}
@@ -1073,6 +1173,7 @@ function ClipRow({
             prefix={prefix}
             clipId={clip.id}
             markers={clip.original.markers}
+            markerDecisions={clip.markerDecisions}
             onExternal={onPlay}
           />
         </div>
@@ -1091,6 +1192,7 @@ function ClipRow({
       )}
       {details && (
         <div className={styles.clipDetails} data-clip-panel="details">
+          <MarkerReview clip={clip} locked={locked} onChange={onChange} />
           <div>
             <label>
               Destination
@@ -1127,16 +1229,6 @@ function ClipRow({
                 <br />
                 {clip.agentReview.rationale || 'No additional rationale.'}
               </p>
-            )}
-            {clip.original.markers.length > 0 && (
-              <div>
-                <b>Markers</b>
-                {clip.original.markers.map((m, i) => (
-                  <p key={i}>
-                    {durationLabel(m.seconds)} — {m.label}
-                  </p>
-                ))}
-              </div>
             )}
           </div>
           <div>

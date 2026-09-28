@@ -10,20 +10,43 @@
   "clips": [
     {
       "id": 1,
-      "source": { "relativePath": "_cut/Original wide shot.mp4" },
+      "source": {
+        "relativePath": "_cut/Original wide shot.mp4"
+      },
       "duration": 42.5,
-      "markers": [{ "seconds": 12.25, "label": "Character entrance" }],
+      "markers": [
+        {
+          "id": "embedded-1",
+          "chapterIndex": 0,
+          "seconds": 12.25,
+          "label": "Character entrance"
+        }
+      ],
       "proposed": {
-        "filename": "Opening - Character entrance.mp4",
+        "filename": "Opening - Courier arrives at the gate.mp4",
         "folder": "Story/Opening"
       },
-      "rationale": "Introduces the scene and character.",
+      "rationale": "Fictional example: reviewed the marker event first, then used the arrival at the gate to name the clip.",
       "questions": [],
-      "hold": false
+      "hold": false,
+      "markerProposals": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "markerId": "embedded-1",
+            "seconds": 12.25,
+            "originalLabel": "Character entrance",
+            "proposedLabel": "Courier arrives at the gate",
+            "rationale": "Fictional example: the marker event identifies the arriving character and location."
+          }
+        ]
+      }
     },
     {
       "id": 2,
-      "source": { "relativePath": "_cut/Unidentified location.mov" },
+      "source": {
+        "relativePath": "_cut/Unidentified location.mov"
+      },
       "duration": null,
       "markers": [],
       "proposed": {

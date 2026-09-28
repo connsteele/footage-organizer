@@ -16,7 +16,7 @@ Each person runs their own independent local copy with their own folders and con
 
 ## Run
 
-Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. FFmpeg is only needed to generate the optional practice videos. Optional **ffprobe** (included with FFmpeg distributions) reads embedded chapters and codec details for previews; playback and imported markers work without it.
+Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. **FFmpeg** generates practice videos and writes accepted embedded marker names. **ffprobe** reads embedded chapters for kits and previews and verifies marker writing. Ordinary moves, playback and imported markers work without these optional tools.
 
 ```powershell
 cd path\to\footage-organizer
@@ -51,22 +51,23 @@ The plan folder contains authoritative `state.json`, original `imports/`, readab
 
 ## Practice project
 
-With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Eight generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
+With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Nine generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
 
-| Example                 | What to try                                                                                                       |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Rename only             | Edit New while keeping the same destination folder and locked extension.                                          |
-| Move only               | Keep the current name and change its location.                                                                    |
-| Rename and move         | Review both changes in the move confirmation.                                                                     |
-| Video and markers       | Scrub, seek imported markers at 2/6 seconds, and view embedded chapters at 0/4/9 seconds with ffprobe configured. |
-| Held review             | Add Your note and export it through Agent follow-up.                                                              |
-| Restore and undo        | Restore Current with the icon, then try Undo/Redo and Reset suggestion.                                           |
-| Unchanged clip          | See a clip skipped by Move clips because its name and location already match.                                     |
-| New folder and dragging | Drag to the empty suggested destination; a needed new folder is created during filing.                            |
+| Example                      | What to try                                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Rename only                  | Edit New while keeping the same destination folder and locked extension.                                          |
+| Move only                    | Keep the current name and change its location.                                                                    |
+| Rename and move              | Review both changes in the move confirmation.                                                                     |
+| Video and markers            | Scrub, seek imported markers at 2/6 seconds, and view embedded chapters at 0/4/9 seconds with ffprobe configured. |
+| Held review                  | Add Your note and export it through Agent follow-up.                                                              |
+| Restore and undo             | Restore Current with the icon, then try Undo/Redo and Reset suggestion.                                           |
+| Unchanged clip               | See a clip skipped by Move clips because its name and location already match.                                     |
+| New folder and dragging      | Drag to the empty suggested destination; a needed new folder is created during filing.                            |
+| Markers first then clip name | Review marked events, accept/edit/keep names, and see how those events inform the clip name.                      |
 
-Initially six clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. Markers demonstrate playback, not marker editing.
+Initially seven clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. The marker lesson demonstrates reviewing events before naming the clip, accepting/editing/rejecting names, previewing decisions, and writing accepted embedded names through Move clips.
 
-These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
+These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips and adds missing marker-review lessons to the same batch. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
 
 ## Real footage workflow
 
@@ -92,7 +93,7 @@ The app's batch is the review plan created at import. Capture, marking, and cutt
 
 **Export plan** produces a review record, not an import handoff. It includes original suggestions, current edits, and accepted follow-up history.
 
-**Marker-name review:** the app can display and seek markers, but does not extract a marker inventory into new-batch kits or support marker rename proposals, acceptance, or writing. Plan JSON and held-review exports retain markers supplied in the original handoff; chapters read only during Preview are not included. Give the agent the clips and original marker data separately and request a comparison table alongside the normal handoff. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names) for the current workflow and export limits.
+**Marker-name review:** leave embedded marker extraction enabled when downloading the kit. The agent reviews markers and surrounding footage first, then uses those events to suggest the clip filename. In Details → Marker names, edit, accept, or keep originals. Acceptance saves the decision; Move clips writes accepted embedded names alongside file changes. Export markers and plan exports retain originals and decisions. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names).
 
 ## Revisiting held clips
 
@@ -117,6 +118,16 @@ For embedded markers and codec details, put `ffprobe` on PATH, set `FFPROBE_PATH
 
 The app streams original media from disk with byte-range support for seeking; it does not load whole videos into JavaScript memory, upload media, create proxies, or transcode files. Browser/OS codec support determines which files play. If a format is unsupported, use **Open in external player**. Preview URLs are temporary and only grant access to one registered clip; reopen the preview after moving the clip or restarting the app. A changed or missing source is reported instead of serving an unverified replacement.
 
+## Writing accepted marker names
+
+Move clips lists the accepted embedded names before confirmation. A marker-only change is included even when the filename and folder stay the same. Held clips are skipped; pending and rejected names stay original. Supported containers are MP4, M4V, MOV and MKV, with FFmpeg and ffprobe required. Set FFMPEG_PATH / FFPROBE_PATH or ffmpegPath / ffprobePath in local configuration. When ffprobePath is an absolute path, its sibling ffmpeg.exe is the default writer.
+
+The app prepares a new container with [FFmpeg stream copy](https://ffmpeg.org/ffmpeg.html#Streamcopy), verifies chapter labels and timing, stream properties, and copied packet hashes, then retains the original under Root Footage/.footage-organizer-originals/<operation>/<clip> before publishing. The original uses disk space until you deliberately remove it. Allow room for one additional copy during processing; rewriting and verification read the footage several times and are slower than a normal move. Transient container files are staged on the footage volume under .footage-organizer-work so publication can use a same-volume move. These internal folders are excluded from review inventories.
+
+The operation journal records original and prepared identities before publication. Restart recovery inspects them without repeating a rewrite. An interrupted publication can offer **Restore original for retry** in Move history; it refuses occupied paths or changed backups. Failed preparation leaves the source untouched. A failed/interrupted run may retain a staging file for inspection. Project deletion and plan cleanup never delete these footage-volume backups or staging files. The move log records their paths.
+
+Markers without an extracted chapterIndex remain app/export-only. Export markers downloads review JSON, not an editor-specific import or automatic sidecar update. Preview shows accepted plan labels before execution; the external player shows actual file labels. Filed marker decisions are locked; use a fresh handoff to change them later.
+
 ## Deleting projects and cleaning up plans
 
 Inside a project's page, choose **Delete project**. The confirmation offers:
@@ -131,7 +142,7 @@ From **All projects → Clean up removed projects**, inspect retained plan folde
 - Held clips stay in place. Clips with questions start held; explicitly unchecking Hold includes them.
 - Preflight detects stale sources, duplicate/existing targets, invalid Windows names, path escapes, extension changes, case-only renames, and cross-volume moves.
 - The backend invokes Windows' two-argument `.NET File.Move`, which refuses an existing destination. Paths are passed as environment data into a constant PowerShell helper. All application logic is TypeScript.
-- Each move records intent before execution and result afterward. Contents and embedded markers are preserved; no transcoding occurs.
+- Each move records intent before execution and result afterward. Ordinary moves preserve file bytes. Accepted embedded marker changes rebuild the container with stream copy, verify chapter names/times and audio/video packet hashes, then publish the file with an original backup; no re-encoding occurs.
 - A failure stops the batch. Completed files remain filed. A fresh review includes only remaining pending changes.
 - Restart recovery reconciles file identities without replaying moves. Ambiguity blocks further execution. **Move history → Check recovery** retries the inspection.
 - Failed saves and stale browser revisions prevent execution. Download unsaved edits before reloading after a conflict.
@@ -143,7 +154,7 @@ Do not edit active state files or change media during execution. A move batch is
 
 Implemented: projects/batches; project deletion with retained-plan or permanent-plan options and later cleanup; folder pickers and per-batch review inventory; structured import; stable IDs; grouped clips; editable names; drag and drop; destination selectors; proposed folders; notes; holds; held-clip follow-up exports and selective updates with conflict checks/history; autosave; edit undo/redo; reset; JSON/Markdown exports; in-app original-media playback and scrubbing; external-player launch; checked execution; progress; logs; recovery; local launcher.
 
-Deferred: playback proxies/transcoding, analysis/transcription, marker editing, Resolve integration, cross-volume transfers, case-only renames, rename cycles, automatic rollback, full-batch handoff replacement, cloud sync, and an installer. Open in player uses the Windows default media association; codec support depends on that player.
+Deferred: playback proxies/transcoding, analysis/transcription, marker time editing, editor-sidecar writing, Resolve integration, cross-volume transfers, case-only renames, rename cycles, automatic rollback, full-batch handoff replacement, cloud sync, and an installer. Open in player uses the Windows default media association; codec support depends on that player.
 
 ## Development
 

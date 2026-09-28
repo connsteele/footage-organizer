@@ -49,6 +49,9 @@ export function buildHandoffKit(
         importIssue: clip.importIssue,
         questions: clip.original.questions,
         agentReview: clip.agentReview,
+        markers: clip.original.markers,
+        markerProposals: clip.original.markerProposals,
+        markerDecisions: clip.markerDecisions,
       })),
     })),
   };
@@ -56,7 +59,7 @@ export function buildHandoffKit(
     '# Footage Organizer handoff kit',
     'This file is reference material for a review agent. It is not an import handoff. Read the guides below, use this project snapshot, and return a separate version 1 handoff JSON. The user reviews and executes the result in the app.',
     'The snapshot includes saved project data, not video or a complete disk inventory. Refresh it after edits or moves. Batch currentPath values describe that batch; the catalog is the current registered source of truth after moves. For the complete history and original suggestions in a batch, request its Export plan.',
-    'Marker review: this kit does not extract marker names or times from footage. Obtain the clips and original marker/chapter data separately. Preserve original labels in the handoff and return proposed marker renames in a separate comparison table. The app can display markers but cannot accept or apply marker renames; see Reviewing marker names below.',
+    'Review markers FIRST: inspect the footage around each marker, suggest clear event names, then use that event sequence to propose the overall clip filename and destination. Explain that connection in the clip rationale. Preserve original markers (including id and chapterIndex) and return markerProposals separately in the handoff. Extracted chapter names and times are in reviewInventory.files[].markers when markerStatus is read. Unavailable, not-scanned, or omitted markerStatus means missing evidence, not an empty clip. Editor-only markers still need to be supplied separately.',
     inventory
       ? 'Review only the media listed in reviewInventory for this batch. Copy reviewInventory.folder into the handoff reviewFolder field. Sources and destinations remain relative to Root Footage. Files with existingClipId already belong to this project: do not silently include them in a new batch; resolve held clips through their existing batch’s Agent follow-up. Assign new IDs starting at nextClipId to new files. The inventory provides paths, sizes and timestamps, not evidence of video content; inspect the supplied clips or clearly state what evidence is missing.'
       : 'Choose Review Footage in the app to add a scoped file inventory to the next kit.',

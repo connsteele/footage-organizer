@@ -1571,3 +1571,39 @@
     transition: none;
   }
 }
+.markerReview {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.markerComparison {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.markerHeading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.markerNames {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+}
+.markerNames > span {
+  overflow-wrap: anywhere;
+}
+.markerNames input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.markerComparison .detailActions {
+  justify-content: flex-start;
+  gap: 16px;
+}

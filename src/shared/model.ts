@@ -10,6 +10,41 @@ export const proposalSchema = z.object({
   filename: z.string().min(1).max(255),
   folder: z.string().max(1500),
 });
+export const markerSchema = z.object({
+  id: safeId.optional(),
+  seconds: z.number().nonnegative(),
+  label: z.string().max(4000),
+  // Only extracted embedded chapters may be rewritten in the media file.
+  chapterIndex: z.number().int().nonnegative().optional(),
+});
+export const markerProposalsSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    items: z
+      .array(
+        z
+          .object({
+            markerId: safeId,
+            originalLabel: z.string().max(4000),
+            seconds: z.number().nonnegative(),
+            proposedLabel: z.string().trim().min(1).max(4000),
+            rationale: z.string().max(4000).default(''),
+          })
+          .strict(),
+      )
+      .max(10000),
+  })
+  .strict();
+export const markerDecisionSchema = z
+  .object({
+    markerId: safeId,
+    label: z.string().max(4000),
+    status: z.enum(['pending', 'accepted', 'rejected']),
+  })
+  .strict();
+export type SourceMarker = z.infer<typeof markerSchema>;
+export type MarkerProposals = z.infer<typeof markerProposalsSchema>;
+export type MarkerDecision = z.infer<typeof markerDecisionSchema>;
 export const handoffClipSchema = z.object({
   id: z.number().int().positive(),
   source: z.object({
@@ -18,9 +53,8 @@ export const handoffClipSchema = z.object({
     mtimeMs: z.number().nonnegative().optional(),
   }),
   duration: z.number().nonnegative().nullable().default(null),
-  markers: z
-    .array(z.object({ seconds: z.number().nonnegative(), label: z.string().max(4000) }))
-    .default([]),
+  markers: z.array(markerSchema).max(10000).default([]),
+  markerProposals: markerProposalsSchema.optional(),
   proposed: proposalSchema,
   rationale: z.string().max(16000).default(''),
   questions: z.array(z.string().max(4000)).default([]),
@@ -81,6 +115,7 @@ export const agentReviewSchema = z.object({
   reviewedAt: z.string(),
   rationale: z.string().max(16000),
   questions: z.array(z.string().max(4000)),
+  markerProposals: markerProposalsSchema.optional(),
 });
 export const batchClipSchema = z.object({
   id: z.number().int().positive(),
@@ -93,6 +128,7 @@ export const batchClipSchema = z.object({
   held: z.boolean(),
   applied: z.boolean(),
   agentReview: agentReviewSchema.optional(),
+  markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
 });
 export type BatchClip = z.infer<typeof batchClipSchema>;
 export const reviewUpdateSchema = z
@@ -113,6 +149,7 @@ export const reviewUpdateSchema = z
             proposed: proposalSchema.strict(),
             rationale: z.string().max(16000),
             questions: z.array(z.string().max(4000)).default([]),
+            markerProposals: markerProposalsSchema.optional(),
           })
           .strict(),
       )
@@ -161,11 +198,20 @@ export const editSchema = z.object({
         proposed: proposalSchema,
         note: z.string().max(16000),
         held: z.boolean(),
+        markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
       }),
     )
     .max(10000),
 });
 export type BatchEdit = z.infer<typeof editSchema>;
+export const markerChangeSchema = z.object({
+  markerId: safeId,
+  chapterIndex: z.number().int().nonnegative(),
+  seconds: z.number().nonnegative(),
+  originalLabel: z.string(),
+  label: z.string(),
+});
+export type MarkerChange = z.infer<typeof markerChangeSchema>;
 export const operationItemSchema = z.object({
   clipId: z.number(),
   from: z.string(),
@@ -173,6 +219,14 @@ export const operationItemSchema = z.object({
   baseline: baselineSchema,
   status: z.enum(['pending', 'moving', 'succeeded', 'failed', 'ambiguous']),
   error: z.string().nullable(),
+  markerChanges: z.array(markerChangeSchema).optional(),
+  markerRewrite: z
+    .object({
+      backupPath: z.string(),
+      preparedPath: z.string(),
+      preparedBaseline: baselineSchema.optional(),
+    })
+    .optional(),
 });
 export type OperationItem = z.infer<typeof operationItemSchema>;
 export const operationSchema = z.object({
@@ -216,7 +270,7 @@ export interface MoveReview {
   projectId: string;
   batchId: string;
   revision: number;
-  items: { clipId: number; from: string; to: string }[];
+  items: { clipId: number; from: string; to: string; markerChanges?: MarkerChange[] }[];
   issues: Issue[];
   held: number;
   unchanged: number;
@@ -233,6 +287,9 @@ export interface ReviewInventory {
     mtimeMs: number;
     existingClipId: number | null;
     batchIds: string[];
+    markers?: SourceMarker[];
+    markerStatus?: 'read' | 'unavailable' | 'not-scanned';
+    markerNote?: string;
   }[];
   skippedFiles: number;
 }
@@ -250,14 +307,34 @@ export function targetPath(clip: Pick<BatchClip, 'proposed'>) {
   return [clip.proposed.folder, clip.proposed.filename].filter(Boolean).join('/');
 }
 export function isPending(clip: BatchClip) {
-  return !clip.held && !clip.applied && clip.currentPath !== targetPath(clip);
+  return (
+    !clip.held &&
+    !clip.applied &&
+    (clip.currentPath !== targetPath(clip) ||
+      clip.original.markers.some(
+        (m, i) =>
+          m.chapterIndex !== undefined &&
+          clip.markerDecisions?.some(
+            (d) =>
+              d.markerId === (m.id ?? `marker-${i + 1}`) &&
+              d.status === 'accepted' &&
+              d.label !== m.label,
+          ),
+      ))
+  );
 }
 export function editOf(batch: Batch): BatchEdit {
   return {
     revision: batch.revision,
     notes: batch.notes,
     folders: batch.folders,
-    clips: batch.clips.map(({ id, proposed, note, held }) => ({ id, proposed, note, held })),
+    clips: batch.clips.map(({ id, proposed, note, held, markerDecisions }) => ({
+      id,
+      proposed,
+      note,
+      held,
+      ...(markerDecisions ? { markerDecisions } : {}),
+    })),
   };
 }
 export function clipLabel(id: number) {

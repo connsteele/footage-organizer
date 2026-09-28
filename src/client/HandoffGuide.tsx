@@ -33,6 +33,7 @@ export function HandoffGuide({
     : '';
   const [inventory, setInventory] = useState<ReviewInventory | null>(null);
   const [notice, setNotice] = useState('');
+  const [includeMarkers, setIncludeMarkers] = useState(true);
   const {
     importing,
     error: importError,
@@ -51,7 +52,7 @@ export function HandoffGuide({
         reviewFolder
           ? api<ReviewInventory>(`/projects/${project.id}/review-inventory`, {
               method: 'POST',
-              body: { folder: reviewFolder },
+              body: { folder: reviewFolder, includeMarkers },
             })
           : Promise.resolve(undefined),
       ]);
@@ -176,11 +177,36 @@ export function HandoffGuide({
               Save as default review folder
             </button>
             {notice && <p role="status">{notice}</p>}
+            <label className={styles.checkbox}>
+              <input
+                type="checkbox"
+                checked={includeMarkers}
+                disabled={busy || importing}
+                onChange={(e) => {
+                  setIncludeMarkers(e.target.checked);
+                  setInventory(null);
+                }}
+              />
+              Include embedded markers for name review
+            </label>
+            <p className={styles.guideHint}>
+              Reads chapter names and times with ffprobe. Large batches can take about a minute; any
+              unread files are identified in the kit. Editor-only markers must be supplied
+              separately.
+            </p>
             {inventory && (
               <p role="status">
                 Kit ready: {inventory.files.length} media files ·{' '}
                 {inventory.files.filter((f) => f.existingClipId === null).length} new ·{' '}
                 {inventory.files.filter((f) => f.existingClipId !== null).length} already tracked.
+                {inventory.files.some((f) => f.markerStatus) && (
+                  <>
+                    {' '}
+                    {inventory.files.reduce((n, f) => n + (f.markers?.length ?? 0), 0)} markers
+                    extracted · {inventory.files.filter((f) => f.markerStatus !== 'read').length}{' '}
+                    files need marker data.
+                  </>
+                )}
               </p>
             )}
           </>

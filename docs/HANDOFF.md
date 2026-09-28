@@ -52,9 +52,9 @@ Handoff and batch IDs become saved filenames. Do not use Windows device names su
 }
 ```
 
-Example metadata values are illustrative. Read actual metadata for real handoffs. `size` is bytes; `mtimeMs` is milliseconds since the Unix epoch; duration and marker times are seconds. Marker times must be relative to the supplied clip, not its original uncut recording. The preview combines these markers with any readable embedded chapters; it never rewrites either source. Include project-only editing markers in the handoff if they were not embedded in the exported clip.
+Example metadata values are illustrative. Read actual metadata for real handoffs. `size` is bytes; `mtimeMs` is milliseconds since the Unix epoch; duration and marker times are seconds. Marker times must be relative to the supplied clip, not its original uncut recording. The preview combines these markers with readable embedded chapters. Only accepted embedded names are written, when the user confirms Move clips. Include project-only editing markers in the handoff if they were not embedded in the exported clip.
 
-`markers` records **original evidence**, not proposed changes to marker names. The next-batch kit does not extract markers from new footage, and chapters read during Preview are not saved back into exports. For a marker-name review, obtain the clips and original marker data separately, preserve originals in the handoff, and deliver suggestions in a separate comparison table as described in [Reviewing marker names](AGENT_GUIDE.md#reviewing-marker-names). The app cannot import, accept, or apply marker renames yet.
+`markers` records **original evidence**, including optional stable `id` and extracted `chapterIndex`. Review those markers and the surrounding footage **before** proposing the clip filename. The optional `markerProposals: {schemaVersion: 1, items: [...]}` extension carries markerId, originalLabel, seconds, proposedLabel and rationale for each suggested rename. Preserve original labels/times; copy chapterIndex only from extracted embedded chapters. See [Reviewing marker names](AGENT_GUIDE.md#reviewing-marker-names) for the complete workflow.
 
 A separate [example file](examples/handoff.v1.json) shows both a ready clip and a held clip. It is fictional and must not be imported unchanged into a real project.
 
@@ -69,7 +69,8 @@ A separate [example file](examples/handoff.v1.json) shows both a ready clip and 
 | `source.relativePath`                                     | Required current path relative to the footage root                                                                                        |
 | `source.size`, `source.mtimeMs`                           | Recommended review-time metadata; omit only when unavailable and explain the limitation                                                   |
 | `duration`                                                | Optional number or null                                                                                                                   |
-| `markers`                                                 | Optional array of `{seconds, label}`                                                                                                      |
+| `markers`                                                 | Optional original markers: `{seconds, label, id?, chapterIndex?}`                                                                         |
+| `markerProposals`                                         | Optional `{schemaVersion: 1, items: [{markerId, originalLabel, seconds, proposedLabel, rationale}]}`; preserve originals.                 |
 | `proposed.filename`                                       | Required full filename with the original extension; use the actual name when unchanged                                                    |
 | `proposed.folder`                                         | Required relative folder; `""` means the media root                                                                                       |
 | `rationale`                                               | Optional explanation                                                                                                                      |

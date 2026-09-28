@@ -34,7 +34,15 @@ Preflight creates an expiring server review tied to project, batch, and revision
 
 Each item is saved as `moving` before the filesystem call. Windows `.NET File.Move(source, target)` without overwrite refuses existing targets, including targets created after preflight. The PowerShell helper contains constant code; source/target paths are supplied as environment values. Only same-volume regular files are supported.
 
-File identity is volume, file ID, size, and modification time. Sources and destination parents are checked for linked paths. No content decoding, marker rewriting, or transcoding occurs. This is a trusted local-user workflow; adversarial changes to directories during execution are outside its threat model.
+File identity is volume, file ID, size, and modification time. Sources and destination parents are checked for linked paths. Ordinary moves do not decode or rewrite content. Accepted embedded marker changes use the separate verified markerWriter pipeline described below; no re-encoding occurs. This is a trusted local-user workflow; adversarial changes to directories during execution are outside its threat model.
+
+## Marker reviews and publication
+
+The version 1 handoff accepts an optional separately versioned markerProposals extension. Original marker records support stable per-clip IDs and optional embedded chapterIndex bindings. Legacy markers receive positional marker-N identities. Shared marker helpers validate identity, original label/time, and decisions. Pending/accepted/rejected decisions participate in autosave and undo; originals stay immutable. Held follow-ups preserve unmentioned decisions and conflict on decisions changed since export. New-batch inventories optionally probe chapters with three workers, a scheduling budget and explicit per-file status.
+
+markerWriter.ts checks actual source chapters and available disk space. It copies all streams and chapter metadata, overriding only accepted title tags, into a new container. It verifies chapter times/labels, stream properties and copied non-data packet hashes, then flushes the output. The service journals backupPath, preparedPath and preparedBaseline before moving the original to the retained backup and publishing the prepared file with no replacement. Marker-only updates use the same journal even when from equals to. Success updates clip/catalog baselines to the prepared identity; the journal retains the original baseline for recovery.
+
+Recovery recognizes a published prepared identity plus original backup. If preparation failed and the source still matches, it permits a fresh review. Missing original plus retained backup and unpublished output is ambiguous: an explicit restore-marker-original request can restore the original only to an empty original path, under the serial mutation lock. Initialization never automatically moves these files. Backups/staging are under hidden footage-root folders and remain outside plan cleanup.
 
 ## Recovery
 

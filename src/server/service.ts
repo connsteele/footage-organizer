@@ -33,6 +33,14 @@ import { moveWithoutReplacement, openMedia } from './move.js';
 import { resolveReviewFolder, reviewInventory } from './reviewFolders.js';
 import { ReviewUpdates } from './reviewUpdates.js';
 import { cleanupProjectPlans } from './projectCleanup.js';
+import {
+  initialMarkerDecisions,
+  markerChanges,
+  validateMarkerDecisions,
+  validateMarkerProposals,
+} from '../shared/markers.js';
+import { inspectMedia } from './mediaInfo.js';
+import { MarkerWriter } from './markerWriter.js';
 
 export class Organizer {
   busy: string | null = null;
@@ -43,6 +51,7 @@ export class Organizer {
   constructor(
     public store: Store,
     private moveFile = moveWithoutReplacement,
+    private markerWriter: Pick<MarkerWriter, 'check' | 'prepare'> = new MarkerWriter(),
   ) {
     this.updates = new ReviewUpdates(store, () => this.idle());
   }
@@ -235,9 +244,14 @@ export class Organizer {
       return state.project;
     });
   }
-  async inventory(projectId: string, folder: string) {
+  async inventory(
+    projectId: string,
+    folder: string,
+    includeMarkers = false,
+    probe?: typeof inspectMedia,
+  ) {
     this.idle();
-    return reviewInventory(await this.store.load(projectId), folder);
+    return reviewInventory(await this.store.load(projectId), folder, { includeMarkers, probe });
   }
   async importHandoff(projectId: string, input: unknown) {
     return this.store.serial(async () => {
@@ -278,6 +292,7 @@ export class Organizer {
         reviewFolder,
       };
       for (const clip of handoff.clips) {
+        validateMarkerProposals(clip.markers, clip.markerProposals);
         clip.source.relativePath = relativePath(clip.source.relativePath);
         if (
           reviewFolder !== undefined &&
@@ -333,6 +348,9 @@ export class Organizer {
           note: '',
           held: clip.hold || clip.questions.length > 0,
           applied: false,
+          ...(clip.markerProposals
+            ? { markerDecisions: initialMarkerDecisions(clip.markerProposals) }
+            : {}),
         });
         state.catalog[String(clip.id)] = { path: clip.source.relativePath, baseline };
       }
@@ -381,6 +399,17 @@ export class Organizer {
         clip.proposed = { ...change.proposed };
         clip.note = change.note;
         clip.held = change.held;
+        if (change.markerDecisions !== undefined) {
+          validateMarkerDecisions(clip.original.markers, change.markerDecisions);
+          if (
+            clip.applied &&
+            JSON.stringify(clip.markerDecisions ?? []) !== JSON.stringify(change.markerDecisions)
+          )
+            throw new AppError(
+              'Filed marker decisions are locked. Use a fresh handoff to review this file again.',
+            );
+          clip.markerDecisions = change.markerDecisions;
+        }
       }
       batch.folders = [...new Set(edit.folders.map((f) => relativePath(f, true)))];
       batch.notes = edit.notes;
@@ -436,11 +465,17 @@ export class Organizer {
         continue;
       }
       const to = targetPath(clip);
-      if (clip.applied || clip.currentPath === to) {
+      const changes = markerChanges(clip);
+      if (clip.applied || (clip.currentPath === to && !changes.length)) {
         review.unchanged++;
         continue;
       }
-      review.items.push({ clipId: clip.id, from: clip.currentPath, to });
+      review.items.push({
+        clipId: clip.id,
+        from: clip.currentPath,
+        to,
+        ...(changes.length ? { markerChanges: changes } : {}),
+      });
       try {
         if (clip.importIssue) throw new AppError(clip.importIssue);
         if (!clip.baseline)
@@ -452,7 +487,7 @@ export class Organizer {
         relativePath(to);
         if (path.extname(to).toLowerCase() !== path.extname(clip.currentPath).toLowerCase())
           throw new AppError('Keep the original file extension.');
-        if (to.toLowerCase() === clip.currentPath.toLowerCase())
+        if (to !== clip.currentPath && to.toLowerCase() === clip.currentPath.toLowerCase())
           throw new AppError('Case-only renames are not supported in this release.');
         if (destinations.has(to.toLowerCase()))
           throw new AppError('Two clips have the same destination.');
@@ -463,8 +498,9 @@ export class Organizer {
         if (!sameFile(await fingerprint(source), clip.baseline))
           throw new AppError('Source changed since import. Request a fresh handoff.');
         const target = await safePath(state.project.mediaRoot, to);
-        if (await exists(target))
+        if (to !== clip.currentPath && (await exists(target)))
           throw new AppError('A file or folder already exists at the destination.');
+        if (changes.length) await this.markerWriter.check(source, changes, clip.baseline.size);
         if ((await parentDevice(target)) !== clip.baseline.dev)
           throw new AppError('Cross-volume moves are not supported.');
         if (clip.proposed.folder && !(await exists(path.dirname(target))))
@@ -541,7 +577,8 @@ export class Organizer {
     clip.currentPath = item.to;
     clip.applied = true;
     clip.held = false;
-    state.catalog[String(clip.id)] = { path: item.to, baseline: item.baseline };
+    clip.baseline = item.markerRewrite?.preparedBaseline ?? item.baseline;
+    state.catalog[String(clip.id)] = { path: item.to, baseline: clip.baseline };
     batch.revision++;
   }
   private async perform(state: ProjectState, operation: Operation) {
@@ -554,13 +591,47 @@ export class Organizer {
           throw new AppError('Source changed before the move.');
         if ((await parentDevice(target)) !== item.baseline.dev)
           throw new AppError('Destination moved to a different volume.');
-        if (await exists(target))
+        if (item.from !== item.to && (await exists(target)))
           throw new AppError('Destination already exists. Nothing was replaced.');
         item.status = 'moving';
         await this.store.save(state); // Durable intent precedes filesystem changes.
-        await this.moveFile(source, target);
-        if ((await exists(source)) || !sameFile(await fingerprint(target), item.baseline))
-          throw new AppError('The move result needs recovery review.');
+        if (item.markerChanges?.length) {
+          const name = `${item.clipId}${path.extname(item.from)}`;
+          item.markerRewrite = {
+            backupPath: `.footage-organizer-originals/${operation.id}/${name}`,
+            preparedPath: `.footage-organizer-work/${operation.id}/${name}`,
+          };
+          const backup = await safePath(
+            state.project.mediaRoot,
+            item.markerRewrite.backupPath,
+            true,
+          );
+          const prepared = await safePath(
+            state.project.mediaRoot,
+            item.markerRewrite.preparedPath,
+            true,
+          );
+          await this.store.save(state);
+          await this.markerWriter.prepare(source, prepared, item.markerChanges, item.baseline.size);
+          if (!sameFile(await fingerprint(source), item.baseline))
+            throw new AppError('Source changed during marker preparation.');
+          item.markerRewrite.preparedBaseline = await fingerprint(prepared);
+          await this.store.save(state); // Verified output identity is durable before archiving the original.
+          await safePath(state.project.mediaRoot, item.from);
+          await safePath(state.project.mediaRoot, item.markerRewrite.backupPath);
+          await this.moveFile(source, backup);
+          if (!sameFile(await fingerprint(backup), item.baseline))
+            throw new AppError('Original backup needs recovery review.');
+          await safePath(state.project.mediaRoot, item.to);
+          await safePath(state.project.mediaRoot, item.markerRewrite.preparedPath);
+          await this.moveFile(prepared, target);
+          if (!sameFile(await fingerprint(target), item.markerRewrite.preparedBaseline))
+            throw new AppError('Published marker update needs recovery review.');
+        } else {
+          await this.moveFile(source, target);
+          if ((await exists(source)) || !sameFile(await fingerprint(target), item.baseline))
+            throw new AppError('The move result needs recovery review.');
+        }
         this.markSuccess(state, operation, index);
         await this.store.save(state);
       } catch (e) {
@@ -571,6 +642,8 @@ export class Organizer {
         // classifying the outcome; do not repeat or roll back the command.
         await this.reconcileItem(state, operation, index);
         if (item.status === 'pending') item.status = 'failed';
+        if (operation.items.every((entry) => entry.status === 'succeeded'))
+          operation.status = 'completed';
         await this.store.save(state);
         return;
       }
@@ -586,6 +659,25 @@ export class Organizer {
       const to = await safePath(state.project.mediaRoot, item.to);
       const source = (await exists(from)) ? await fingerprint(from) : null;
       const target = (await exists(to)) ? await fingerprint(to) : null;
+      if (item.markerRewrite) {
+        const backupPath = await safePath(state.project.mediaRoot, item.markerRewrite.backupPath);
+        const backup = (await exists(backupPath)) ? await fingerprint(backupPath) : null;
+        if (
+          backup &&
+          sameFile(backup, item.baseline) &&
+          target &&
+          item.markerRewrite.preparedBaseline &&
+          sameFile(target, item.markerRewrite.preparedBaseline) &&
+          (item.from === item.to || !source)
+        )
+          this.markSuccess(state, operation, index);
+        else if (source && sameFile(source, item.baseline) && !backup) item.status = 'pending';
+        else {
+          item.status = 'ambiguous';
+          item.error = `Marker update needs recovery. Original backup: ${item.markerRewrite.backupPath}. Use Restore original for an interrupted update, then review again.`;
+        }
+        return;
+      }
       if (!source && target && sameFile(target, item.baseline))
         this.markSuccess(state, operation, index);
       else if (
@@ -629,6 +721,29 @@ export class Organizer {
     return this.store.serial(async () => {
       this.idle();
       return this.reconcileUnlocked(await this.store.load(projectId));
+    });
+  }
+  async restoreMarkerOriginal(projectId: string, operationId: string, clipId: number) {
+    return this.store.serial(async () => {
+      this.idle();
+      const state = await this.reconcileUnlocked(await this.store.load(projectId));
+      const operation = state.operations.find((o) => o.id === operationId);
+      const item = operation?.items.find((i) => i.clipId === clipId);
+      if (!operation || !item?.markerRewrite || item.status !== 'ambiguous')
+        throw new AppError(
+          'Only an interrupted marker update can restore its original. Check recovery first.',
+        );
+      const backup = await safePath(state.project.mediaRoot, item.markerRewrite.backupPath);
+      const source = await safePath(state.project.mediaRoot, item.from, true);
+      if (await exists(source))
+        throw new AppError('The original path is occupied. Nothing was replaced.');
+      if (!sameFile(await fingerprint(backup), item.baseline))
+        throw new AppError('The original backup changed. Nothing was moved.');
+      await this.moveFile(backup, source);
+      await this.reconcileItem(state, operation, operation.items.indexOf(item));
+      operation.status = 'interrupted';
+      await this.store.save(state);
+      return state;
     });
   }
   async waitForIdle() {

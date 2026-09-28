@@ -21,5 +21,6 @@ For held clips in an existing batch, obtain **Agent follow-up → Export held cl
 - `src/shared/model.ts` is the runtime handoff contract. Run `npm run schema` after changing it, update the guide and examples, and preserve explicit schema versioning.
 - Run `npm run build` and `npm run lint`; run relevant tests for changes to behavior. Use disposable files to test file operations.
 - Do not commit personal handoffs, project state, or media. Do not move source footage as part of implementation testing.
+- When a user-facing feature benefits from a practical example, extend the feature tour in `scripts/practice-fixture.ts` and its preservation-aware upgrade script. Keep existing practice decisions and filed clips intact.
 
 The in-app guide downloads the repository's guide, example, and schema. Keep those sources current instead of maintaining a separate protocol in UI copy.

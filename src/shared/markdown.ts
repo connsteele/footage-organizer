@@ -1,4 +1,5 @@
 import { clipLabel, targetPath, type Batch, type Operation, type Project } from './model.js';
+import { identifiedMarkers } from './markers.js';
 const cell = (text: string) => text.replaceAll('|', '\\|').replaceAll('\n', '<br>');
 export function batchMarkdown(project: Project, batch: Batch, operations: Operation[] = []) {
   const lines = [
@@ -43,6 +44,7 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     lines.push('');
   }
   for (const accepted of batch.reviewUpdates ?? []) {
+    // Follow-up marker proposals are retained in the update's JSON and the current table below.
     lines.push(
       `## Accepted review update ${accepted.update.updateId}`,
       '',
@@ -61,6 +63,24 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     }
     lines.push('');
   }
+  for (const clip of batch.clips.filter((c) => c.original.markers.length)) {
+    lines.push(
+      `## Clip ${clipLabel(clip.id)} — marker review`,
+      '',
+      '| Time (seconds) | Original | Suggested / edited | Decision | Reason |',
+      '|---|---|---|---|---|',
+    );
+    for (const marker of identifiedMarkers(clip.original.markers)) {
+      const decision = clip.markerDecisions?.find((d) => d.markerId === marker.id);
+      const proposal =
+        clip.agentReview?.markerProposals?.items.find((p) => p.markerId === marker.id) ??
+        clip.original.markerProposals?.items.find((p) => p.markerId === marker.id);
+      lines.push(
+        `| ${marker.seconds} | ${cell(marker.label)} | ${cell(decision?.label ?? proposal?.proposedLabel ?? marker.label)} | ${decision?.status ?? 'unchanged'}${marker.chapterIndex === undefined ? ' (export only)' : clip.applied && decision?.status === 'accepted' ? ' (written)' : ''} | ${cell(proposal?.rationale ?? '')} |`,
+      );
+    }
+    lines.push('');
+  }
   for (const op of operations.filter((o) => o.batchId === batch.id)) {
     lines.push(
       `## Operation ${op.id}`,
@@ -73,6 +93,11 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     for (const item of op.items)
       lines.push(
         `| ${clipLabel(item.clipId)} | ${cell(item.from)} | ${cell(item.to)} | ${cell(item.error || item.status)} |`,
+      );
+    for (const item of op.items.filter((i) => i.markerRewrite))
+      lines.push(
+        '',
+        `Clip ${clipLabel(item.clipId)} original backup: ${item.markerRewrite!.backupPath}`,
       );
     lines.push('');
   }

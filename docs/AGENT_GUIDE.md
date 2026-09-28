@@ -6,7 +6,7 @@ Footage Organizer turns review suggestions into a plan the user edits and execut
 
 1. The user cuts and marks footage in their editor and creates a project in Footage Organizer.
 2. They open **Start next batch**, select **Review Footage** inside the project's **Root Footage**, and **Download handoff kit**. They give the kit and the clips or review material to a review agent.
-3. The agent reviews the available evidence, proposes a filename and one destination per clip, and delivers an import JSON plus a readable summary.
+3. The agent reviews each clip’s markers and surrounding footage first, suggests clearer event names, then uses that sequence to propose a filename and one destination per clip. Deliver an import JSON plus a readable summary.
 4. The user imports the JSON, changes placements or notes, holds unresolved clips, and reviews the exact file operations before choosing **Move clips**.
 5. For new footage, download a fresh kit. For held clips and their user notes, use **Agent follow-up → Export held clips for review** in the existing batch; return a batch update following `docs/BATCH_UPDATES.md`. The user previews and accepts selected suggestions in that batch.
 
@@ -38,7 +38,7 @@ An ordinary **Export project context** file contains the catalog and naming pref
 
 ## Review and deliver
 
-State what you actually inspected in `reviewNotes`, including sampling and anything you could not check. Preserve marker labels/times that are provided; the app records these descriptions without rewriting embedded markers. Express uncertainty with `questions` and `hold`, not fabricated facts.
+State what you actually inspected in `reviewNotes`, including sampling and anything you could not check. Preserve original marker labels/times as evidence; put proposed names in the separate versioned markerProposals field. The app writes only user-accepted embedded names when Move clips is confirmed. Express uncertainty with `questions` and `hold`, not fabricated facts.
 
 Deliver a UTF-8 `.json` containing only the handoff object and a short Markdown summary grouped by proposed folder with the same clip IDs. Identify the destination project, held clips, and outstanding questions. Keep the JSON below the 8 MB import limit. See the protocol for exact fields, units, path restrictions, and validation steps.
 
@@ -46,26 +46,43 @@ If the agent has local repo access, it can run `npm run validate:handoff -- path
 
 ## Reviewing marker names
 
-Marker playback is supported; a marker-renaming workflow is not yet implemented. Do not assume that the new-batch kit contains the markers visible in the app's player.
+**Review markers first, then name the clip.** Inspect footage around each marker, including enough adjacent context to understand the event. Suggest short, consistent, useful event names. Use the reviewed sequence to propose the overall clip name and destination, and explain that connection in the clip rationale. A marker label alone is not evidence of video content; report uninspected or uncertain content and hold unresolved clips.
 
-| Source                                            | Marker information available to the agent                                                                                                   |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Next-batch handoff kit / Review Footage inventory | Paths, sizes, timestamps and tracked IDs. No extracted marker labels or times; saved batch summaries also omit original markers.            |
-| Export project context                            | Catalog and preferences; no marker list.                                                                                                    |
-| Export plan JSON                                  | Original handoff markers in `batch.clips[].original.markers`, when supplied.                                                                |
-| Export held clips for review                      | Original handoff markers for the exported held clips, when supplied.                                                                        |
-| Export Markdown                                   | Placement and decision summary, not a marker export.                                                                                        |
-| In-app Preview                                    | Imported markers plus embedded chapters read from the file with optional ffprobe. Preview-only chapters are not added to the above exports. |
+The next-batch kit extracts embedded chapters when **Include embedded markers for name review** is selected (on by default). Each inventory file reports markerStatus: read, unavailable, or not-scanned. Only read with an empty markers array establishes that no chapters were found. Disabled extraction omits this information. Scanning uses three workers with a 60-second scheduling budget and 500-file limit; a running probe may finish after that budget. Narrow the review folder or obtain missing evidence separately for any incomplete scan.
 
-For a marker-name review, obtain the actual clips and their original marker/chapter list separately. A local agent can read embedded chapters with ffprobe; editor-only markers need the editor's export or project file. Review Footage scans skip sidecars such as LosslessCut `.llc` files. Map any original-recording timestamps to the exported clip before using them; do not assume they already refer to clip-relative time. Inspect the footage around each marker and state any evidence you could not review.
+Copy inventory markers into the handoff unchanged, including id, chapterIndex, seconds, and label. IDs are local to a clip and must be unique. chapterIndex binds an extracted marker to its actual embedded chapter; never invent it for editor-only markers. Legacy handoffs without IDs use marker-1, marker-2, etc., in their original array order. Preserve originals and return changes separately:
 
-Return the usual filename/folder handoff with **original** marker labels and times preserved. Put suggested marker renames in a separate Markdown table with **clip ID, source path, clip-relative time, original label, suggested label, and reason**. Explain the naming convention and flag uncertain suggestions. This table is reference material for manual review, not an importable marker update.
+```json
+"markerProposals": {
+  "schemaVersion": 1,
+  "items": [{
+    "markerId": "embedded-1",
+    "originalLabel": "thing happens",
+    "seconds": 4.5,
+    "proposedLabel": "Gate opens after switch activation",
+    "rationale": "Reviewed the switch and gate sequence around this marker."
+  }]
+}
+```
 
-Do not replace `markers[].label` with suggested names: that field records original evidence, and renamed copies can appear beside the original embedded chapter in Preview. Neither normal handoffs nor held-clip batch updates define marker rename proposals. The UI has no marker edit/accept controls, and **Move clips** preserves embedded markers without rewriting them. Do not rewrite media, sidecars, or app state as part of preparing the review.
+This optional extension works in version 1 handoffs and held-clip batch updates; use the updated app/schema. Unknown marker references, changed original labels/times, and duplicate proposals are rejected. Clip rationale should connect the reviewed events to the filename, rather than merely repeating it.
+
+The user opens Details → Marker names to edit, accept, or keep originals. Acceptance saves a reversible plan decision and updates the displayed timeline. Move clips later writes accepted embedded labels while preserving audio/video packets, chapter times, and a recoverable original. Pending/rejected marker names are not written. Editor-only markers are saved/exported and never silently embedded. A clip with only accepted embedded changes still appears in Move clips; held clips are skipped. Filed decisions are locked.
+
+| Source                             | Marker information                                                                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New-batch kit                      | Extracted chapters and per-file scan status, plus original markers and saved decisions from earlier batches.                                                   |
+| Export project context             | Catalog/preferences only; use a kit or plan for marker evidence.                                                                                               |
+| Export plan JSON / held-review kit | Original handoff markers, proposals and user decisions for the included clips.                                                                                 |
+| Export markers                     | Reviewed labels and originals with clip IDs, times and decisions; reference/export JSON, not an import handoff.                                                |
+| Export Markdown                    | Original, suggested and accepted/rejected marker comparison tables.                                                                                            |
+| Preview                            | Imported markers plus live embedded chapters; accepted plan labels appear on the timeline. Preview alone does not add newly found chapters to saved originals. |
+
+Editor-only markers still need an editor export or project file; Review Footage scans skip sidecars such as LosslessCut .llc files. Convert original-recording times to exported-clip times before including them. Do not rewrite media, sidecars, or app state as a review agent. The app performs the user's confirmed file work.
 
 ## Prompt for a new conversation
 
-> Use the attached Footage Organizer handoff kit and the review material I provide. Follow its version 1 handoff protocol, preserve existing project clip IDs and current paths, and respect my naming preferences and saved decisions. Propose one filename and destination per clip. Record review limitations; hold unresolved clips and explain the questions. Return an importable handoff JSON plus a readable summary with matching IDs. Do not move footage or modify app state. If required project context or review evidence is missing, tell me what you need before finalizing the handoff.
+> Use the attached Footage Organizer handoff kit and the review material I provide. Follow its version 1 handoff protocol, preserve existing project clip IDs and current paths, and respect my naming preferences and saved decisions. Review the markers and surrounding footage within each clip first. Suggest clearer marker names, then use those events to propose one filename and destination per clip. Preserve original marker evidence and return markerProposals separately; explain how the marker review informed the clip name. Record review limitations; hold unresolved clips and explain the questions. Return an importable handoff JSON plus a readable summary with matching IDs. Do not move footage or modify app state. If required project context or review evidence is missing, tell me what you need before finalizing the handoff.
 
 ## Different users and machines
 
