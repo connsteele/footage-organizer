@@ -6,6 +6,7 @@ export interface Config {
   dataDir: string;
   tempDir: string;
   port: number;
+  ffprobePath?: string;
 }
 export async function loadConfig(): Promise<Config> {
   let local: Partial<Config> = {};
@@ -19,6 +20,7 @@ export async function loadConfig(): Promise<Config> {
       process.env.FO_DATA_DIR || local.dataDir || path.join(os.homedir(), 'Footage Organizer'),
     tempDir: process.env.FO_TEMP_DIR || local.tempDir || os.tmpdir(),
     port: Number(process.env.PORT || local.port || 4317),
+    ffprobePath: process.env.FFPROBE_PATH || local.ffprobePath || 'ffprobe',
   };
   if (!Number.isInteger(config.port) || config.port < 1024 || config.port > 65535)
     throw new Error('Invalid server port.');

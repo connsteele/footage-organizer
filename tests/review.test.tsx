@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
@@ -12,8 +12,12 @@ vi.mock('../src/client/api', () => ({
   download: vi.fn(),
   errorText: (e: Error) => e.message,
 }));
+beforeEach(() => {
+  vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+});
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
 });
 

@@ -48,6 +48,7 @@ import { Modal } from './Modal';
 import { FilenameInput } from './FilenameInput';
 import { HeldReviewTools } from './HeldReviewTools';
 import { ClipPreview } from './ClipPreview';
+import { centerExpandedClip } from './clipScroll';
 import styles from './App.module.css';
 
 export function Review({ refreshProjects }: { refreshProjects: () => Promise<void> }) {
@@ -620,7 +621,7 @@ function ReviewSession({
           </div>
         </details>
       )}
-      <div className={styles.actionbar}>
+      <div className={styles.actionbar} data-review-actions>
         <div>
           <strong>
             {pending
@@ -942,6 +943,18 @@ function ClipRow({
   onPreview: () => void;
 }) {
   const [details, setDetails] = useState(false);
+  const row = useRef<HTMLElement>(null);
+  const focusPanel = useRef<'preview' | 'details' | null>(null);
+  useEffect(() => {
+    const requested = focusPanel.current;
+    if (!requested || !(requested === 'preview' ? previewOpen : details)) return;
+    focusPanel.current = null;
+    const frame = requestAnimationFrame(() => {
+      const panel = row.current?.querySelector<HTMLElement>(`[data-clip-panel="${requested}"]`);
+      if (row.current && panel) centerExpandedClip(row.current, panel);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [previewOpen, details]);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: clip.id,
     disabled: locked || clip.applied,
@@ -963,7 +976,10 @@ function ClipRow({
           : 'Move';
   return (
     <article
-      ref={setNodeRef}
+      ref={(node) => {
+        row.current = node;
+        setNodeRef(node);
+      }}
       className={`${styles.clipRow} ${clip.held ? styles.heldRow : ''} ${isDragging ? styles.dragging : ''}`}
     >
       <div className={styles.clipMain}>
@@ -1030,7 +1046,10 @@ function ClipRow({
           disabled={locked}
           aria-expanded={previewOpen}
           aria-label={`Preview clip ${clipLabel(clip.id)}`}
-          onClick={onPreview}
+          onClick={() => {
+            focusPanel.current = previewOpen ? null : 'preview';
+            onPreview();
+          }}
         >
           Preview <ChevronDown size={13} />
         </button>
@@ -1038,19 +1057,25 @@ function ClipRow({
           className={styles.detailsButton}
           aria-expanded={details}
           aria-label={`Details for clip ${clipLabel(clip.id)}`}
-          onClick={() => setDetails(!details)}
+          onClick={() => {
+            focusPanel.current = details ? null : 'details';
+            setDetails(!details);
+          }}
         >
           Details
           <ChevronDown size={13} />
         </button>
       </div>
       {previewOpen && (
-        <ClipPreview
-          key={`${prefix}-${clip.id}`}
-          prefix={prefix}
-          clipId={clip.id}
-          onExternal={onPlay}
-        />
+        <div data-clip-panel="preview">
+          <ClipPreview
+            key={`${prefix}-${clip.id}`}
+            prefix={prefix}
+            clipId={clip.id}
+            markers={clip.original.markers}
+            onExternal={onPlay}
+          />
+        </div>
       )}
       {clip.importIssue && (
         <p className={styles.rowWarning}>
@@ -1065,7 +1090,7 @@ function ClipRow({
         </p>
       )}
       {details && (
-        <div className={styles.clipDetails}>
+        <div className={styles.clipDetails} data-clip-panel="details">
           <div>
             <label>
               Destination

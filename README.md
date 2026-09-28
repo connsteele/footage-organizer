@@ -16,7 +16,7 @@ Each person runs their own independent local copy with their own folders and con
 
 ## Run
 
-Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. FFmpeg is only needed to generate the optional practice videos.
+Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. FFmpeg is only needed to generate the optional practice videos. Optional **ffprobe** (included with FFmpeg distributions) reads embedded chapters and codec details for previews; playback and imported markers work without it.
 
 ```powershell
 cd path\to\footage-organizer
@@ -89,6 +89,14 @@ Edits made since export, changed sources, and filed clips block affected suggest
 ## In-app video preview
 
 Use **Preview** beside the external-player icon and Details to expand a clip's player. It includes playback, scrubbing, volume, and fullscreen controls provided by the browser. Nothing starts playing automatically. Opening another clip closes the first preview; closing the preview, navigating away, or starting the move review releases the player. Filed clips can be previewed in the Filed view too.
+
+Opening **Preview** or **Details** scrolls the requested panel and clip heading toward the center of the available viewport, leaving room above the bottom Move clips bar. Tall details panels align to their beginning when the whole panel cannot fit. Reduced-motion preferences are respected. The player reserves its space while loading, preventing another jump when metadata arrives.
+
+The marked seek bar below the video combines imported handoff markers with embedded chapter markers. Click a marker to seek without changing the paused/playing state; hover for its time and label, or expand **Marker list** for closely spaced markers. Identical labels at the same time appear once. Times beyond the actual video duration remain listed but disabled. Native fullscreen displays the browser's video controls; the app's marked seek bar remains in the page. LosslessCut project-only markers must be supplied in the handoff with times relative to the exported clip, not the original recording. Previewing never rewrites markers or footage.
+
+For embedded markers and codec details, put `ffprobe` on PATH, set `FFPROBE_PATH`, or add `"ffprobePath": "D:/Tools/ffmpeg/bin/ffprobe.exe"` to your untracked `organizer.local.json`. The environment variable takes precedence. This optional helper reads only the registered preview file, has a timeout, and runs without a console window. Failed metadata reads leave playback and imported markers available.
+
+**Playback info** shows the codec, dimensions, frame rate, and a browser decoding-efficiency estimate when available (currently for MP4 AV1/H.264 with readable codec configuration). The app uses native HTML video so the browser can use its hardware decoder; a webpage cannot force GPU decoding or override browser/driver settings. The estimate is not proof of the decoder actually in use. In Firefox, check **Settings → General → Performance → Use hardware acceleration when available** (uncheck Use recommended performance settings to reveal it), then restart Firefox after changes. See [Firefox performance settings](https://support.mozilla.org/en-US/kb/performance-settings) and [MediaCapabilities decoding estimates](https://developer.mozilla.org/en-US/docs/Web/API/MediaCapabilities/decodingInfo). Codec support, GPU support for the particular format, and browser settings still determine playback.
 
 The app streams original media from disk with byte-range support for seeking; it does not load whole videos into JavaScript memory, upload media, create proxies, or transcode files. Browser/OS codec support determines which files play. If a format is unsupported, use **Open in external player**. Preview URLs are temporary and only grant access to one registered clip; reopen the preview after moving the clip or restarting the app. A changed or missing source is reported instead of serving an unverified replacement.
 

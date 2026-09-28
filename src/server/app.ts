@@ -8,6 +8,7 @@ import { AppError, messageOf } from './paths.js';
 import type { Organizer } from './service.js';
 import { chooseFolder } from './folderPicker.js';
 import { MediaPreviews } from './media.js';
+import { inspectMedia } from './mediaInfo.js';
 
 export function createApp(
   service: Organizer,
@@ -16,11 +17,12 @@ export function createApp(
     shutdown?: () => void;
     clientDir?: string;
     folderPicker?: typeof chooseFolder;
+    mediaProbe?: typeof inspectMedia;
   },
 ) {
   const app = express();
   const token = randomBytes(32).toString('hex');
-  const media = new MediaPreviews(service);
+  const media = new MediaPreviews(service, options.mediaProbe);
   const allowedHosts = new Set([
     `127.0.0.1:${options.port}`,
     `localhost:${options.port}`,
@@ -96,6 +98,13 @@ export function createApp(
     const { clipId } = z.object({ clipId: z.number().int().positive() }).strict().parse(req.body);
     res.json(await media.create(projectId(req), batchId(req), clipId));
   });
+  app.get('/api/media/:ticket/info', async (req, res) => {
+    const id = z
+      .string()
+      .regex(/^[a-f0-9]{48}$/)
+      .parse(req.params.ticket);
+    res.json(await media.info(id));
+  });
   app.get('/api/media/:ticket', async (req, res, next) => {
     const { file, type } = await media.resolve(
       z
@@ -109,6 +118,9 @@ export function createApp(
     // sendFile streams from disk and handles byte ranges/HEAD for seeking large clips.
     res.sendFile(file, { acceptRanges: true, cacheControl: false, dotfiles: 'allow' }, (error) => {
       if (!error || req.aborted || res.destroyed) return;
+      // Closing/switching previews normally aborts an in-flight byte-range response.
+      if (['ECONNABORTED', 'ECONNRESET'].includes((error as NodeJS.ErrnoException).code || ''))
+        return;
       const status = (error as { statusCode?: number }).statusCode;
       if (status === 416) next(new AppError('Requested video range is unavailable.', 416));
       else if (status === 404) next(new AppError('Video is no longer available.', 404));
@@ -189,11 +201,9 @@ export function createApp(
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) return _next(err);
     if ((err as { type?: string })?.type === 'entity.too.large')
-      return res
-        .status(413)
-        .json({
-          error: 'This request exceeds the 8 MB limit. Choose a smaller handoff or batch update.',
-        });
+      return res.status(413).json({
+        error: 'This request exceeds the 8 MB limit. Choose a smaller handoff or batch update.',
+      });
     const status =
       err instanceof AppError
         ? err.status

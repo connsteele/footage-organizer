@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import type { Baseline } from '../shared/model.js';
 import { AppError, sameFile } from './paths.js';
 import type { Organizer } from './service.js';
+import { inspectMedia } from './mediaInfo.js';
+import type { MediaInfo } from '../shared/media.js';
 
 const mediaTypes: Record<string, string> = {
   '.mp4': 'video/mp4',
@@ -26,13 +28,17 @@ type Ticket = {
   file: string;
   baseline: Baseline;
   expires: number;
+  info?: Promise<MediaInfo>;
 };
 
 // The native video element cannot add the app's request header. Give it a temporary,
 // read-only URL for exactly one verified clip, rather than exposing the app session token.
 export class MediaPreviews {
   private tickets = new Map<string, Ticket>();
-  constructor(private service: Organizer) {}
+  constructor(
+    private service: Organizer,
+    private probe = inspectMedia,
+  ) {}
   async create(projectId: string, batchId: string, clipId: number) {
     const { file, baseline } = await this.service.mediaFile(projectId, batchId, clipId);
     if (!mediaTypes[path.extname(file).toLowerCase()])
@@ -59,6 +65,16 @@ export class MediaPreviews {
     if (current.file !== ticket.file || !sameFile(current.baseline, ticket.baseline))
       throw new AppError('This clip moved or changed. Close and reopen its preview.', 409);
     return { file: current.file, type: mediaTypes[path.extname(current.file).toLowerCase()] };
+  }
+  async info(id: string) {
+    const { file } = await this.resolve(id);
+    const ticket = this.tickets.get(id);
+    if (!ticket) throw new AppError('Preview expired. Close and reopen it.', 404);
+    ticket.info ??= this.probe(file);
+    const info = await ticket.info;
+    // A move or deletion during probing must invalidate metadata too.
+    await this.resolve(id);
+    return info;
   }
   forget(projectId: string) {
     for (const [id, ticket] of this.tickets)

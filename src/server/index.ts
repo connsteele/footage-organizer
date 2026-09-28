@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { Organizer } from './service.js';
 import { Store } from './store.js';
 import { createApp } from './app.js';
+import { inspectMedia } from './mediaInfo.js';
 
 const config = await loadConfig();
 const store = new Store(config.dataDir);
@@ -25,7 +26,13 @@ async function shutdown() {
   });
   server.closeIdleConnections();
 }
-const server = createServer(createApp(service, { port: config.port, shutdown }));
+const server = createServer(
+  createApp(service, {
+    port: config.port,
+    shutdown,
+    mediaProbe: (file) => inspectMedia(file, config.ffprobePath),
+  }),
+);
 server.on('error', async (error) => {
   console.error(error);
   await store.release();

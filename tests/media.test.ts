@@ -20,6 +20,11 @@ const server = createServer();
 let base: string, token: string;
 let lastPreviewUrl: string;
 const bytes = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz');
+const mediaProbe = vi.fn(async () => ({
+  video: null,
+  audio: [],
+  markers: [{ seconds: 1.25, label: 'Chapter' }],
+}));
 async function call(url: string, body?: unknown, method = 'POST') {
   return fetch(`${base}/api${url}`, {
     method,
@@ -67,7 +72,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
-  server.on('request', createApp(service, { port }));
+  server.on('request', createApp(service, { port, mediaProbe }));
   base = `http://127.0.0.1:${port}`;
   token = (await (await fetch(`${base}/api/session`)).json()).token;
 });
@@ -98,6 +103,19 @@ it('requires a local authenticated preview request and scopes URLs to supported 
     (await fetch(`${base}${url}`, { headers: { origin: 'https://foreign.example' } })).status,
   ).toBe(403);
 });
+it('only probes registered preview files, caches metadata, and protects the metadata route', async () => {
+  expect((await fetch(`${base}/api/media/${'0'.repeat(48)}/info`)).status).toBe(404);
+  const url = await ticket();
+  const info = await fetch(`${base}${url}/info`);
+  expect(await info.json()).toMatchObject({ markers: [{ seconds: 1.25, label: 'Chapter' }] });
+  expect(mediaProbe).toHaveBeenCalledWith(path.join(media, 'clip.mp4'));
+  expect(mediaProbe).toHaveBeenCalledOnce();
+  expect((await fetch(`${base}${url}/info`)).status).toBe(200);
+  expect(mediaProbe).toHaveBeenCalledOnce();
+  expect(
+    (await fetch(`${base}${url}/info`, { headers: { origin: 'https://foreign.example' } })).status,
+  ).toBe(403);
+});
 it('streams whole files, byte ranges, suffixes and HEAD with correct seeking headers', async () => {
   const url = await ticket();
   const partial = await fetch(`${base}${url}`, { headers: { range: 'bytes=2-7' } });
@@ -126,6 +144,7 @@ it('expires preview URLs and blocks playback during file moves', async () => {
   const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 60 * 1000);
   try {
     expect((await fetch(`${base}${url}`)).status).toBe(404);
+    expect((await fetch(`${base}${url}/info`)).status).toBe(404);
   } finally {
     clock.mockRestore();
   }
@@ -144,11 +163,13 @@ it('invalidates old URLs after a real move and previews the filed clip at its ne
   await service.startMove('media', 'first', review.id);
   await service.waitForIdle();
   expect((await fetch(`${base}${url}`)).status).toBe(409);
+  expect((await fetch(`${base}${url}/info`)).status).toBe(409);
   expect(await exists(path.join(media, 'clip.mp4'))).toBe(false);
   const current = await ticket();
   expect(Buffer.from(await (await fetch(`${base}${current}`)).arrayBuffer())).toEqual(bytes);
   await writeFile(path.join(media, 'Filed/Renamed.mp4'), 'different media');
   expect((await fetch(`${base}${current}`)).status).toBe(409);
+  expect((await fetch(`${base}${current}/info`)).status).toBe(409);
 });
 it('requires deletion confirmation, invalidates previews, and exposes confirmed cleanup separately', async () => {
   expect((await call('/projects/media', {}, 'DELETE')).status).toBe(400);
@@ -159,6 +180,7 @@ it('requires deletion confirmation, invalidates previews, and exposes confirmed 
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ removed: true, plansDeleted: false });
   expect((await fetch(`${base}${lastPreviewUrl}`)).status).toBe(404);
+  expect((await fetch(`${base}${lastPreviewUrl}/info`)).status).toBe(404);
   expect(await exists(path.join(root, 'plans/state.json'))).toBe(true);
   const records = await (await fetch(`${base}/api/removed-projects`)).json();
   expect(records).toHaveLength(1);
