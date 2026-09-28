@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createPracticeHandoff, practiceBatchId } from './practice-fixture.js';
+import { createPracticeHandoff, practiceBatchId, practiceHandoff } from './practice-fixture.js';
 import { validateHandoff } from './validate-handoff.js';
 import { fingerprint, safePath } from '../src/server/paths.js';
 import { initialMarkerDecisions } from '../src/shared/markers.js';
@@ -10,18 +10,29 @@ export async function upgradePracticeTour(store: Store, tempDir: string, ffmpeg?
   return store.serial(async () => {
     const state = await store.load('practice');
     const batch = state.batches.find((b) => b.id === practiceBatchId);
-    if (
-      !batch ||
-      batch.clips.some((c) =>
-        c.original.source.relativePath.includes('/10 Markers first then clip name/'),
-      )
-    )
-      return false;
+    if (!batch) return false;
+    // The original feature tour had eight clips. Later lessons are appended in place;
+    // compare imported paths because an existing lesson may already have been filed.
+    const missing = practiceHandoff()
+      .clips.slice(8)
+      .filter(
+        (lesson) =>
+          !batch.clips.some(
+            (clip) => clip.original.source.relativePath === lesson.source.relativePath,
+          ),
+      );
+    if (!missing.length) return false;
     const nextId = Math.max(0, ...Object.keys(state.catalog).map(Number)) + 1;
     const handoff = validateHandoff(
-      await createPracticeHandoff(state.project.mediaRoot, tempDir, nextId, ffmpeg, true),
+      await createPracticeHandoff(
+        state.project.mediaRoot,
+        tempDir,
+        nextId,
+        ffmpeg,
+        missing.map((c) => c.source.relativePath),
+      ),
     );
-    handoff.handoffId = 'practice-marker-lesson-v1';
+    handoff.handoffId = `practice-lessons-${nextId}-v1`;
     for (const original of handoff.clips) {
       const baseline = await fingerprint(
         await safePath(state.project.mediaRoot, original.source.relativePath),
@@ -42,15 +53,10 @@ export async function upgradePracticeTour(store: Store, tempDir: string, ffmpeg?
       if (!batch.folders.includes(original.proposed.folder))
         batch.folders.push(original.proposed.folder);
     }
-    // These are generated lesson descriptions, never the user's notes or proposals.
-    for (const clip of batch.clips)
-      clip.original.rationale = clip.original.rationale.replace(
-        'Markers are read-only: this app does not rename or rewrite them.',
-        'See example 10 to review embedded marker names before refining the clip name.',
-      );
-    batch.reviewNotes =
-      batch.reviewNotes.replace('six clips', 'seven clips').replace(/Marker limits:[\s\S]*$/, '') +
-      '\n\nNew lesson 10: review marker names first, then refine the clip name. Accepting saves a decision; Move clips writes accepted embedded names and retains the original. Editor-only markers remain export-only.';
+    batch.reviewNotes +=
+      '\n\nAdded practice lessons: ' +
+      missing.map((clip) => clip.source.relativePath.split('/').at(-2)).join('; ') +
+      '. Open Details for steps and Preview to try the marker controls.';
     batch.revision++;
     await atomicWrite(
       path.join(state.project.dataDir, 'imports', `${handoff.handoffId}.json`),

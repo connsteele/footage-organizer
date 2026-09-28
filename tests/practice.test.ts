@@ -1,7 +1,9 @@
-import { afterAll, expect, it } from 'vitest';
+import { afterAll, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { practiceHandoff } from '../scripts/practice-fixture';
+import * as practiceFixtures from '../scripts/practice-fixture';
+import { upgradePracticeTour } from '../scripts/upgrade-practice';
 import { validateHandoff } from '../scripts/validate-handoff';
 import { Organizer } from '../src/server/service';
 import { Store } from '../src/server/store';
@@ -23,7 +25,75 @@ afterAll(async () => {
   }
 });
 
-it('teaches seven moves, a hold and an unchanged clip without replacing an earlier practice batch', async () => {
+it('adds the scrolling lesson once without regenerating or changing existing edited and filed clips', async () => {
+  const root = await mkdtemp(path.join(scratch, 'practice-upgrade-'));
+  roots.push(root);
+  const media = path.join(root, 'media');
+  await mkdir(media);
+  const store = new Store(path.join(root, 'registry'));
+  stores.push(store);
+  const service = new Organizer(store);
+  await service.initialize();
+  await service.createProject({
+    id: 'practice',
+    name: 'Practice project',
+    mediaRoot: media,
+    dataDir: path.join(root, 'plans'),
+  });
+  const handoff = practiceHandoff(41);
+  handoff.clips.pop(); // Previous tour: nine clips, including the marker-name lesson.
+  for (const clip of handoff.clips)
+    await writeFile(await safePath(media, clip.source.relativePath, true), `existing ${clip.id}`);
+  const batch = await service.importHandoff('practice', handoff);
+  const edit = editOf(batch);
+  edit.notes = 'My batch notes';
+  edit.clips.forEach((clip, i) => {
+    clip.held = i !== 0;
+    clip.note = 'Keep my notes';
+  });
+  edit.clips[8].markerDecisions![0].label = 'My edited marker';
+  await service.saveBatch('practice', batch.id, edit);
+  const review = await service.review('practice', batch.id);
+  await service.startMove('practice', batch.id, review.id);
+  await service.waitForIdle();
+  const before = await store.load('practice');
+  expect(before.batches[0].clips[0].applied).toBe(true);
+  const generation = vi
+    .spyOn(practiceFixtures, 'createPracticeHandoff')
+    .mockImplementation(async (_media, _temp, startId = 1, _ffmpeg, onlySources) => {
+      const added = practiceHandoff(startId);
+      added.clips = added.clips
+        .filter((clip) => onlySources?.includes(clip.source.relativePath))
+        .map((clip, i) => ({ ...clip, id: startId + i }));
+      for (const clip of added.clips)
+        await writeFile(
+          await safePath(media, clip.source.relativePath, true),
+          'new scrolling sample',
+        );
+      return added;
+    });
+  try {
+    expect(await upgradePracticeTour(store, scratch)).toBe(true);
+    const after = await store.load('practice');
+    expect(after.batches[0].clips.slice(0, 9)).toEqual(before.batches[0].clips);
+    expect(after.batches[0].notes).toBe('My batch notes');
+    expect(after.operations).toEqual(before.operations);
+    const added = after.batches[0].clips[9];
+    expect(added.id).toBe(50);
+    expect(added.original.markers).toHaveLength(24);
+    expect(added.original.rationale).toContain('Scroll inside');
+    expect(generation.mock.calls[0][4]).toEqual([added.original.source.relativePath]);
+    expect(await upgradePracticeTour(store, scratch)).toBe(false);
+    expect(generation).toHaveBeenCalledTimes(1);
+    expect(await readFile(path.join(media, before.batches[0].clips[0].currentPath), 'utf8')).toBe(
+      'existing 41',
+    );
+  } finally {
+    generation.mockRestore();
+  }
+});
+
+it('teaches eight moves, a hold and an unchanged clip without replacing an earlier practice batch', async () => {
   const root = await mkdtemp(path.join(scratch, 'practice-'));
   roots.push(root);
   const media = path.join(root, 'media');
@@ -68,7 +138,7 @@ it('teaches seven moves, a hold and an unchanged clip without replacing an earli
   const batch = await service.importHandoff('practice', handoff);
   const review = await service.review('practice', batch.id);
   expect(review.issues).toEqual([]);
-  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49]);
+  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50]);
   expect(review.held).toBe(1);
   expect(review.unchanged).toBe(1);
   expect(review.newFolders).toEqual([handoff.clips[7].proposed.folder]);
@@ -85,7 +155,7 @@ it('teaches seven moves, a hold and an unchanged clip without replacing an earli
   expect(after.batches.find((b) => b.id === oldBatch.id)).toEqual(before.batches[0]);
   expect(await readFile(path.join(media, 'Earlier.mp4'), 'utf8')).toBe('earlier footage');
   const filed = after.batches.find((b) => b.id === batch.id)!;
-  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(7);
+  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(8);
   expect(filed.clips.filter((clip) => !clip.applied).map((clip) => clip.id)).toEqual([45, 47]);
   for (const item of review.items)
     expect(await readFile(path.join(media, item.to), 'utf8')).toBe(

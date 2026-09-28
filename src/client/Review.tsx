@@ -1055,6 +1055,7 @@ function ClipRow({
     disabled: locked || clip.applied,
   });
   const currentName = clip.currentPath.split('/').at(-1) ?? clip.currentPath;
+  const originalName = clip.original.source.relativePath.split('/').at(-1)!;
   const questions = clip.agentReview?.questions ?? clip.original.questions;
   const renamed = currentName !== clip.proposed.filename;
   const movedFolder = clip.currentPath.split('/').slice(0, -1).join('/') !== clip.proposed.folder;
@@ -1104,21 +1105,25 @@ function ClipRow({
             <button
               type="button"
               className={styles.restoreFilename}
-              aria-label={`Use current filename for clip ${clipLabel(clip.id)}`}
-              title={renamed ? 'Use the current filename' : 'Already using the current filename'}
-              disabled={locked || clip.applied || !renamed}
+              aria-label={`Use original filename for clip ${clipLabel(clip.id)}`}
+              title={
+                clip.proposed.filename !== originalName
+                  ? 'Use the original filename'
+                  : 'Already using the original filename'
+              }
+              disabled={locked || clip.applied || clip.proposed.filename === originalName}
               onClick={() =>
                 onChange((c) => {
-                  c.proposed.filename = currentName;
+                  c.proposed.filename = originalName;
                 })
               }
             >
               <RotateCcw size={16} />
             </button>
           </div>
-          <span className={styles.currentFilenameLabel}>Current:</span>
-          <span className={styles.currentFilename} title={clip.currentPath}>
-            {currentName}
+          <span className={styles.originalFilenameLabel}>Original:</span>
+          <span className={styles.originalFilename} title={clip.original.source.relativePath}>
+            {originalName}
           </span>
         </div>
         <span className={styles.duration}>{durationLabel(clip.original.duration)}</span>
@@ -1174,6 +1179,7 @@ function ClipRow({
             clipId={clip.id}
             markers={clip.original.markers}
             markerDecisions={clip.markerDecisions}
+            review={{ clip, locked, onChange }}
             onExternal={onPlay}
           />
         </div>
@@ -1192,7 +1198,7 @@ function ClipRow({
       )}
       {details && (
         <div className={styles.clipDetails} data-clip-panel="details">
-          <MarkerReview clip={clip} locked={locked} onChange={onChange} />
+          {!previewOpen && <MarkerReview clip={clip} locked={locked} onChange={onChange} />}
           <div>
             <label>
               Destination

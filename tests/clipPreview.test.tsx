@@ -58,10 +58,29 @@ it('merges marker sources, seeks without autoplay, and keeps out-of-range marker
   expect(screen.queryByRole('button', { name: /Jump to .*Wrong timestamp/ })).toBeNull();
   fireEvent.change(screen.getByRole('slider'), { target: { value: '8.5' } });
   expect(player.currentTime).toBe(8.5);
-  await user.click(screen.getByText('Marker list', { exact: true }));
+  expect(screen.getByText('Markers', { exact: true }).closest('details')?.open).toBe(true);
   expect(
     (screen.getByRole('button', { name: /Wrong timestamp/ }) as HTMLButtonElement).disabled,
   ).toBe(true);
+});
+
+it('keeps Markers collapsed while playback and optional metadata update', async () => {
+  let resolve!: (info: MediaInfo) => void;
+  const { player, user } = await setup(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const toggle = screen.getByText('Markers', { exact: true });
+  await user.click(toggle);
+  expect(toggle.closest('details')?.open).toBe(false);
+  fireEvent.timeUpdate(player);
+  resolve(embedded);
+  await screen.findByRole('button', { name: 'Jump to 00:04.000: Embedded chapter' });
+  expect(toggle.closest('details')?.open).toBe(false);
+  await user.click(toggle);
+  expect(toggle.closest('details')?.open).toBe(true);
+  expect(screen.getByRole('button', { name: 'Time: 00:04.000 Embedded chapter' })).toBeTruthy();
 });
 
 it('plays independently of metadata loading/failure and releases the player on close', async () => {

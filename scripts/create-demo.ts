@@ -24,7 +24,7 @@ try {
     const upgraded = await upgradePracticeTour(store, config.tempDir, config.ffmpegPath);
     console.log(
       upgraded
-        ? 'Added the marker-review lesson to the existing feature tour. All user decisions and filed clips were preserved.'
+        ? 'Added missing lessons to the existing feature tour. All user decisions and filed clips were preserved.'
         : 'The practice feature tour already exists; all edits and filed clips were preserved.',
     );
   } else {

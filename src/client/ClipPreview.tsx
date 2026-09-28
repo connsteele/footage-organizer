@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, LoaderCircle } from 'lucide-react';
-import { clipLabel, type MarkerDecision } from '../shared/model';
+import { clipLabel, type BatchClip, type MarkerDecision } from '../shared/model';
 import { identifiedMarkers } from '../shared/markers';
 import { markerTime, previewMarkers, type MediaInfo, type PreviewMarker } from '../shared/media';
 import { api, errorText } from './api';
+import { MarkerReview, MarkerSeekButton } from './MarkerReview';
 import styles from './App.module.css';
 
 export function ClipPreview({
@@ -11,12 +12,18 @@ export function ClipPreview({
   clipId,
   markers,
   markerDecisions,
+  review,
   onExternal,
 }: {
   prefix: string;
   clipId: number;
   markers: PreviewMarker[];
   markerDecisions?: MarkerDecision[];
+  review?: {
+    clip: BatchClip;
+    locked: boolean;
+    onChange: (update: (clip: BatchClip) => void) => void;
+  };
   onExternal: () => void;
 }) {
   const [source, setSource] = useState('');
@@ -27,6 +34,7 @@ export function ClipPreview({
   );
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const [markersOpen, setMarkersOpen] = useState(true);
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     let cancelled = false;
@@ -139,133 +147,158 @@ export function ClipPreview({
       className={styles.clipPreview}
       aria-label={`Video preview for clip ${clipLabel(clipId)}`}
     >
-      <div className={styles.previewStage}>
-        {!source && !error && (
-          <p role="status">
-            <LoaderCircle size={18} className={styles.spin} /> Loading preview…
-          </p>
-        )}
-        {source && (
-          <video
-            ref={video}
-            src={source}
-            controls
-            preload="metadata"
-            playsInline
-            aria-label={`Video for clip ${clipLabel(clipId)}`}
-            onLoadedMetadata={loaded}
-            onDurationChange={loaded}
-            onTimeUpdate={() => setPosition(video.current?.currentTime || 0)}
-            onError={() =>
-              setError(
-                'This video is unavailable or its format is not supported by your browser. Try the external player, or close and reopen the preview.',
-              )
-            }
-          />
-        )}
-      </div>
-      <div className={styles.markerTimeline}>
-        {markerDecisions?.some((d) => d.status === 'accepted') && (
-          <p className={styles.muted}>Timeline shows accepted names from this plan.</p>
-        )}
-        <div className={styles.timelineHeading}>
-          <span>
-            {allMarkers.length} {allMarkers.length === 1 ? 'marker' : 'markers'}
-          </span>
-          <span>
-            {markerTime(position)} / {markerTime(duration)}
-          </span>
-        </div>
-        <div className={styles.timelineTrack}>
-          <input
-            type="range"
-            min={0}
-            max={duration || 1}
-            step={0.001}
-            value={Math.min(position, duration)}
-            disabled={!ready}
-            aria-label={`Seek clip ${clipLabel(clipId)}`}
-            aria-valuetext={markerTime(position)}
-            onChange={(event) => seek(Number(event.target.value))}
-          />
-          {ready &&
-            allMarkers
-              .filter((m) => m.seconds <= duration)
-              .map((m, index) => (
-                <button
-                  key={`${m.seconds}-${index}`}
-                  type="button"
-                  className={styles.timelineMarker}
-                  style={{ left: `${(m.seconds / duration) * 100}%` }}
-                  title={`${markerTime(m.seconds)} — ${m.label}`}
-                  aria-label={`Jump to ${markerTime(m.seconds)}: ${m.label}`}
-                  onClick={() => seek(m.seconds)}
-                />
-              ))}
-        </div>
-        <details className={styles.markerList}>
-          <summary>Marker list</summary>
-          {allMarkers.length ? (
-            allMarkers.map((m, index) => (
-              <button
-                key={index}
-                type="button"
-                disabled={!ready || m.seconds > duration}
-                onClick={() => seek(m.seconds)}
-              >
-                <time>{markerTime(m.seconds)}</time>
-                <span>
-                  {m.label}
-                  {duration > 0 && m.seconds > duration ? ' (outside this clip)' : ''}
-                </span>
+      <div className={styles.previewLayout}>
+        <div className={styles.previewMedia}>
+          <div className={styles.previewStage}>
+            {!source && !error && (
+              <p role="status">
+                <LoaderCircle size={18} className={styles.spin} /> Loading preview…
+              </p>
+            )}
+            {source && (
+              <video
+                ref={video}
+                src={source}
+                controls
+                preload="metadata"
+                playsInline
+                aria-label={`Video for clip ${clipLabel(clipId)}`}
+                onLoadedMetadata={loaded}
+                onDurationChange={loaded}
+                onTimeUpdate={() => setPosition(video.current?.currentTime || 0)}
+                onError={() =>
+                  setError(
+                    'This video is unavailable or its format is not supported by your browser. Try the external player, or close and reopen the preview.',
+                  )
+                }
+              />
+            )}
+          </div>
+          <div className={styles.markerTimeline}>
+            {markerDecisions?.some((d) => d.status === 'accepted') && (
+              <p className={styles.muted}>Timeline shows accepted names from this plan.</p>
+            )}
+            <div className={styles.timelineHeading}>
+              <span>
+                {allMarkers.length} {allMarkers.length === 1 ? 'marker' : 'markers'}
+              </span>
+              <span>
+                Time: {markerTime(position)} / {markerTime(duration)}
+              </span>
+            </div>
+            <div className={styles.timelineTrack}>
+              <input
+                type="range"
+                min={0}
+                max={duration || 1}
+                step={0.001}
+                value={Math.min(position, duration)}
+                disabled={!ready}
+                aria-label={`Seek clip ${clipLabel(clipId)}`}
+                aria-valuetext={markerTime(position)}
+                onChange={(event) => seek(Number(event.target.value))}
+              />
+              {ready &&
+                allMarkers
+                  .filter((m) => m.seconds <= duration)
+                  .map((m, index) => (
+                    <button
+                      key={`${m.seconds}-${index}`}
+                      type="button"
+                      className={styles.timelineMarker}
+                      style={{ left: `${(m.seconds / duration) * 100}%` }}
+                      title={`${markerTime(m.seconds)} — ${m.label}`}
+                      aria-label={`Jump to ${markerTime(m.seconds)}: ${m.label}`}
+                      onClick={() => seek(m.seconds)}
+                    />
+                  ))}
+            </div>
+          </div>
+          {error && (
+            <div className={styles.previewError} role="alert">
+              <p>{error}</p>
+              <button className={styles.secondary} onClick={onExternal}>
+                <ExternalLink size={17} /> Open in external player
               </button>
-            ))
-          ) : info && !info.note ? (
-            <p>No imported or embedded markers found.</p>
-          ) : null}
-          {info?.note && <p>{info.note}</p>}
-          {!info && !error && <p>Checking for embedded markers…</p>}
-        </details>
-      </div>
-      {error && (
-        <div className={styles.previewError} role="alert">
-          <p>{error}</p>
-          <button className={styles.secondary} onClick={onExternal}>
-            <ExternalLink size={17} /> Open in external player
-          </button>
+            </div>
+          )}
         </div>
-      )}
-      <details className={styles.playbackInfo}>
-        <summary>Playback info</summary>
-        {info?.video && (
-          <p>
-            {info.video.codec.toUpperCase()} · {info.video.width} × {info.video.height} ·{' '}
-            {Number(info.video.framerate.toFixed(2))} fps
-            {info.audio.length ? ` · ${info.audio.join(', ').toUpperCase()} audio` : ''}
-          </p>
-        )}
-        <p>
-          {capability} This is a browser estimate, not confirmation that the GPU is currently
-          decoding.
-        </p>
-        <p>
-          Original-file playback uses the browser's native decoder. Hardware acceleration is managed
-          by your browser and graphics driver and must be enabled there.
-        </p>
-        <p>
-          In Firefox: Settings → General → Performance → Use hardware acceleration when available.
-          Uncheck Use recommended performance settings to reveal this option. Restart Firefox after
-          changing it.{' '}
-          <a
-            href="https://support.mozilla.org/en-US/kb/performance-settings"
-            target="_blank"
-            rel="noreferrer"
+        <aside
+          className={styles.previewAside}
+          aria-label={`Markers and playback info for clip ${clipLabel(clipId)}`}
+        >
+          <details
+            className={styles.previewMarkers}
+            open={markersOpen}
+            onToggle={(event) => setMarkersOpen(event.currentTarget.open)}
           >
-            Firefox playback settings
-          </a>
-        </p>
-        {info?.note && <p>{info.note}</p>}
-      </details>
+            <summary>
+              Markers <span className={styles.muted}>({allMarkers.length})</span>
+            </summary>
+            <div
+              className={styles.previewMarkersScroll}
+              role="region"
+              aria-label={`Markers for clip ${clipLabel(clipId)}`}
+              tabIndex={0}
+            >
+              {review ? (
+                <MarkerReview
+                  {...review}
+                  onSeek={seek}
+                  duration={ready ? duration : 0}
+                  previewMarkers={allMarkers}
+                  showHeading={false}
+                />
+              ) : (
+                allMarkers.map((marker, index) => (
+                  <MarkerSeekButton
+                    key={index}
+                    marker={marker}
+                    duration={ready ? duration : 0}
+                    onSeek={seek}
+                  />
+                ))
+              )}
+              {!allMarkers.length && info && !info.note && (
+                <p>No imported or embedded markers found.</p>
+              )}
+              {info?.note && <p>{info.note}</p>}
+              {!info && !error && <p>Checking for embedded markers…</p>}
+            </div>
+          </details>
+          <details className={styles.playbackInfo}>
+            <summary>Playback info</summary>
+            {info?.video && (
+              <p>
+                {info.video.codec.toUpperCase()} · {info.video.width} × {info.video.height} ·{' '}
+                {Number(info.video.framerate.toFixed(2))} fps
+                {info.audio.length ? ` · ${info.audio.join(', ').toUpperCase()} audio` : ''}
+              </p>
+            )}
+            <p>
+              {capability} This is a browser estimate, not confirmation that the GPU is currently
+              decoding.
+            </p>
+            <p>
+              Original-file playback uses the browser's native decoder. Hardware acceleration is
+              managed by your browser and graphics driver and must be enabled there.
+            </p>
+            <p>
+              In Firefox: Settings → General → Performance → Use hardware acceleration when
+              available. Uncheck Use recommended performance settings to reveal this option. Restart
+              Firefox after changing it.{' '}
+              <a
+                href="https://support.mozilla.org/en-US/kb/performance-settings"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Firefox playback settings
+              </a>
+            </p>
+            {info?.note && <p>{info.note}</p>}
+          </details>
+        </aside>
+      </div>
     </section>
   );
 }

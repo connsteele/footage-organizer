@@ -51,7 +51,7 @@ The plan folder contains authoritative `state.json`, original `imports/`, readab
 
 ## Practice project
 
-With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Nine generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
+With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Ten generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
 
 | Example                      | What to try                                                                                                       |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -60,14 +60,16 @@ With the app stopped and FFmpeg available, run `npm run demo`, then `npm run lau
 | Rename and move              | Review both changes in the move confirmation.                                                                     |
 | Video and markers            | Scrub, seek imported markers at 2/6 seconds, and view embedded chapters at 0/4/9 seconds with ffprobe configured. |
 | Held review                  | Add Your note and export it through Agent follow-up.                                                              |
-| Restore and undo             | Restore Current with the icon, then try Undo/Redo and Reset suggestion.                                           |
+| Restore and undo             | Restore Original with the icon, then try Undo/Redo and Reset suggestion.                                          |
 | Unchanged clip               | See a clip skipped by Move clips because its name and location already match.                                     |
 | New folder and dragging      | Drag to the empty suggested destination; a needed new folder is created during filing.                            |
 | Markers first then clip name | Review marked events, accept/edit/keep names, and see how those events inform the clip name.                      |
 
-Initially seven clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. The marker lesson demonstrates reviewing events before naming the clip, accepting/editing/rejecting names, previewing decisions, and writing accepted embedded names through Move clips.
+The **Scroll through many markers** example combines 24 imported review markers and three embedded chapters in the same bounded list. Try scrolling to the last marker, clicking cards to seek, editing names, and collapsing the panel.
 
-These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips and adds missing marker-review lessons to the same batch. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
+Initially eight clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. The marker lesson demonstrates reviewing events before naming the clip, accepting/editing/rejecting names, previewing decisions, and writing accepted embedded names through Move clips.
+
+These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips and adds missing lessons to the same batch. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
 
 ## Real footage workflow
 
@@ -93,7 +95,7 @@ The app's batch is the review plan created at import. Capture, marking, and cutt
 
 **Export plan** produces a review record, not an import handoff. It includes original suggestions, current edits, and accepted follow-up history.
 
-**Marker-name review:** leave embedded marker extraction enabled when downloading the kit. The agent reviews markers and surrounding footage first, then uses those events to suggest the clip filename. In Details → Marker names, edit, accept, or keep originals. Acceptance saves the decision; Move clips writes accepted embedded names alongside file changes. Export markers and plan exports retain originals and decisions. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names).
+**Marker-name review:** leave embedded marker extraction enabled when downloading the kit. The agent reviews markers and surrounding footage first, then uses those events to suggest the clip filename. In Preview → Markers or Details → Marker names, compare New above Original, then edit, accept, or keep originals. The check icon accepts New; the return arrow keeps Original. Hover for action names, or use the information icon to read the agent’s reasoning. Click a marker card in Preview, or focus it and press Enter or Space, to seek to the marked event. Text fields and review buttons keep their own actions. Acceptance saves the decision; Move clips writes accepted embedded names alongside file changes. Export markers and plan exports retain originals and decisions. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names).
 
 ## Revisiting held clips
 
@@ -106,11 +108,11 @@ Edits made since export, changed sources, and filed clips block affected suggest
 
 ## In-app video preview
 
-Use **Preview** beside the external-player icon and Details to expand a clip's player. It includes playback, scrubbing, volume, and fullscreen controls provided by the browser. Nothing starts playing automatically. Opening another clip closes the first preview; closing the preview, navigating away, or starting the move review releases the player. Filed clips can be previewed in the Filed view too.
+Use **Preview** beside the external-player icon and Details to expand a clip's player. It includes playback, scrubbing, volume, and fullscreen controls provided by the browser. On wide windows, Markers and Playback info sit beside the video; on smaller windows they stack below it. Markers opens by default and combines name review and playback-only markers in time order. Its list scrolls within a capped height on every window size, so additional markers do not keep enlarging the preview. Collapse it when you want to focus on playback. Nothing starts playing automatically. Opening another clip closes the first preview; closing the preview, navigating away, or starting the move review releases the player. Filed clips can be previewed in the Filed view too.
 
 Opening **Preview** or **Details** scrolls the requested panel and clip heading toward the center of the available viewport, leaving room above the bottom Move clips bar. Tall details panels align to their beginning when the whole panel cannot fit. Reduced-motion preferences are respected. The player reserves its space while loading, preventing another jump when metadata arrives.
 
-The marked seek bar below the video combines imported handoff markers with embedded chapter markers. Click a marker to seek without changing the paused/playing state; hover for its time and label, or expand **Marker list** for closely spaced markers. Identical labels at the same time appear once. Times beyond the actual video duration remain listed but disabled. Native fullscreen displays the browser's video controls; the app's marked seek bar remains in the page. LosslessCut project-only markers must be supplied in the handoff with times relative to the exported clip, not the original recording. Previewing never rewrites markers or footage.
+The marked seek bar below the video combines imported handoff markers with embedded chapter markers. Click a marker to seek without changing the paused/playing state; hover for its time and label, or use the expanded **Markers** panel for closely spaced markers. Markers included in the handoff have name-review controls; additional chapters discovered during playback are available there for seeking. Identical labels at the same time appear once. Times beyond the actual video duration remain listed but disabled. Native fullscreen displays the browser's video controls; the app's marked seek bar remains in the page. LosslessCut project-only markers must be supplied in the handoff with times relative to the exported clip, not the original recording. Previewing never rewrites markers or footage.
 
 For embedded markers and codec details, put `ffprobe` on PATH, set `FFPROBE_PATH`, or add `"ffprobePath": "D:/Tools/ffmpeg/bin/ffprobe.exe"` to your untracked `organizer.local.json`. The environment variable takes precedence. This optional helper reads only the registered preview file, has a timeout, and runs without a console window. Failed metadata reads leave playback and imported markers available.
 

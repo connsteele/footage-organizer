@@ -914,15 +914,37 @@
 }
 .clipPreview {
   /* Reserve room for the clip heading, marked timeline, and bottom action bar. */
-  --preview-width: min(100%, 70rem, calc(52vh * 16 / 9), calc(max(8rem, 100vh - 26rem) * 16 / 9));
+  --preview-max-width: min(70rem, calc(52vh * 16 / 9), calc(max(8rem, 100vh - 26rem) * 16 / 9));
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--line);
+  container-type: inline-size;
+}
+.previewLayout {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+}
+.previewMedia {
+  width: 100%;
+  max-width: var(--preview-max-width);
+  min-width: 0;
   display: grid;
   gap: 0.75rem;
 }
+.previewAside {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+@container (min-width: 68rem) {
+  .previewLayout {
+    grid-template-columns: minmax(0, min(62%, var(--preview-max-width))) minmax(0, 1fr);
+  }
+}
 .previewStage {
   position: relative;
-  width: var(--preview-width);
+  width: 100%;
   aspect-ratio: 16 / 9;
   background: #000;
   border-radius: 6px;
@@ -944,12 +966,6 @@
   background: #000;
   border-radius: 6px;
 }
-.clipPreview > p {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: var(--text-small);
-}
 .previewError {
   display: grid;
   gap: 0.75rem;
@@ -958,7 +974,7 @@
 }
 .markerTimeline,
 .playbackInfo {
-  width: var(--preview-width);
+  width: 100%;
   min-width: 0;
   font-size: var(--text-small);
 }
@@ -1000,36 +1016,53 @@
   outline-offset: 2px;
   z-index: 1;
 }
-.markerList summary,
+.previewMarkers > summary,
 .playbackInfo summary {
   cursor: pointer;
   color: var(--muted);
 }
-.markerList[open] {
-  max-height: 15rem;
-  overflow-y: auto;
+.previewMarkers > summary {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: var(--text-body);
 }
-.markerList button {
+.previewMarkersScroll {
+  max-height: clamp(14rem, 48vh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  margin-top: 0.5rem;
+}
+.markerCard {
+  position: relative;
   width: 100%;
-  display: flex;
-  gap: 0.75rem;
   text-align: left;
   color: var(--ink);
   background: var(--canvas);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0.5rem;
-  margin-top: 0.35rem;
-  font-size: var(--text-small);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
 }
-.markerList time {
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
+.markerClickable {
+  cursor: pointer;
 }
-.markerList span {
+.markerClickable:hover {
+  border-color: var(--accent-border);
+}
+.markerSeek {
+  display: grid;
+  gap: 0.5rem;
+}
+.markerSeek span {
   overflow-wrap: anywhere;
 }
-.markerList p,
+.previewMarkersScroll > p,
 .playbackInfo p {
   margin-top: 0.5rem;
   color: var(--muted);
@@ -1176,8 +1209,8 @@
   color: var(--ink);
   border-color: var(--accent-border);
 }
-.currentFilenameLabel,
-.currentFilename {
+.originalFilenameLabel,
+.originalFilename {
   color: var(--muted);
 }
 .filenameEditor {
@@ -1576,23 +1609,59 @@
   min-width: 0;
 }
 .markerComparison {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 16px;
-  margin: 14px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+.markerComparison > :not(.markerCardSeek) {
+  position: relative;
+}
+.markerCardSeek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  padding: 0;
+}
+.markerCardSeek:disabled {
+  cursor: default;
 }
 .markerHeading {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  grid-column: 1;
+  grid-row: 1;
+}
+.markerHeading > span:not(.markerTime) {
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+.markerTime {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.markerHint {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: var(--text-small);
 }
 .markerNames {
+  grid-column: 1 / -1;
+  grid-row: 2;
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 0.4rem 0.65rem;
   font-size: 1rem;
 }
 .markerNames > span {
@@ -1602,8 +1671,44 @@
   width: 100%;
   min-width: 0;
   font: inherit;
+  padding: 0.4rem 0.5rem;
 }
-.markerComparison .detailActions {
-  justify-content: flex-start;
-  gap: 16px;
+.markerOriginal {
+  color: var(--muted);
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+}
+.markerAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+}
+.markerAction:hover:not(:disabled),
+.markerAction[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.markerAction[aria-pressed='true']:disabled {
+  opacity: 1;
+}
+.markerContext {
+  display: flex;
+  gap: 0.25rem;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+.markerReason {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
 }
