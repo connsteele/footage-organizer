@@ -51,7 +51,22 @@ The plan folder contains authoritative `state.json`, original `imports/`, readab
 
 ## Practice project
 
-With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Six small test-pattern videos demonstrate the complete workflow. They are safe to edit and move. Running the demo command again preserves existing work. `FO_DEMO_DIR` selects the practice directory; `FFMPEG_PATH` selects FFmpeg if it is not on PATH.
+With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Eight generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
+
+| Example                 | What to try                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Rename only             | Edit New while keeping the same destination folder and locked extension.                                          |
+| Move only               | Keep the current name and change its location.                                                                    |
+| Rename and move         | Review both changes in the move confirmation.                                                                     |
+| Video and markers       | Scrub, seek imported markers at 2/6 seconds, and view embedded chapters at 0/4/9 seconds with ffprobe configured. |
+| Held review             | Add Your note and export it through Agent follow-up.                                                              |
+| Restore and undo        | Restore Current with the icon, then try Undo/Redo and Reset suggestion.                                           |
+| Unchanged clip          | See a clip skipped by Move clips because its name and location already match.                                     |
+| New folder and dragging | Drag to the empty suggested destination; a needed new folder is created during filing.                            |
+
+Initially six clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. Markers demonstrate playback, not marker editing.
+
+These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
 
 ## Real footage workflow
 
@@ -76,6 +91,8 @@ Project context includes current IDs and the next available ID. Existing IDs mus
 The app's batch is the review plan created at import. Capture, marking, and cutting happen before that, outside the app. There is currently no watch-folder ingestion or empty pre-review batch to create. For every new processing chunk, download a fresh project handoff kit, review that chunk, import its new handoff, and work through its placements. IDs continue across batches rather than restarting at 1.
 
 **Export plan** produces a review record, not an import handoff. It includes original suggestions, current edits, and accepted follow-up history.
+
+**Marker-name review:** the app can display and seek markers, but does not extract a marker inventory into new-batch kits or support marker rename proposals, acceptance, or writing. Plan JSON and held-review exports retain markers supplied in the original handoff; chapters read only during Preview are not included. Give the agent the clips and original marker data separately and request a comparison table alongside the normal handoff. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names) for the current workflow and export limits.
 
 ## Revisiting held clips
 

@@ -44,6 +44,25 @@ Deliver a UTF-8 `.json` containing only the handoff object and a short Markdown 
 
 If the agent has local repo access, it can run `npm run validate:handoff -- path/to/handoff.json`. This checks the format, IDs, paths, filenames, and extension preservation without importing or moving anything. Import and final move review still check file identity, catalog consistency, and destination availability. Neither the validator nor the app analyzes video content; that review happens in the conversation.
 
+## Reviewing marker names
+
+Marker playback is supported; a marker-renaming workflow is not yet implemented. Do not assume that the new-batch kit contains the markers visible in the app's player.
+
+| Source                                            | Marker information available to the agent                                                                                                   |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next-batch handoff kit / Review Footage inventory | Paths, sizes, timestamps and tracked IDs. No extracted marker labels or times; saved batch summaries also omit original markers.            |
+| Export project context                            | Catalog and preferences; no marker list.                                                                                                    |
+| Export plan JSON                                  | Original handoff markers in `batch.clips[].original.markers`, when supplied.                                                                |
+| Export held clips for review                      | Original handoff markers for the exported held clips, when supplied.                                                                        |
+| Export Markdown                                   | Placement and decision summary, not a marker export.                                                                                        |
+| In-app Preview                                    | Imported markers plus embedded chapters read from the file with optional ffprobe. Preview-only chapters are not added to the above exports. |
+
+For a marker-name review, obtain the actual clips and their original marker/chapter list separately. A local agent can read embedded chapters with ffprobe; editor-only markers need the editor's export or project file. Review Footage scans skip sidecars such as LosslessCut `.llc` files. Map any original-recording timestamps to the exported clip before using them; do not assume they already refer to clip-relative time. Inspect the footage around each marker and state any evidence you could not review.
+
+Return the usual filename/folder handoff with **original** marker labels and times preserved. Put suggested marker renames in a separate Markdown table with **clip ID, source path, clip-relative time, original label, suggested label, and reason**. Explain the naming convention and flag uncertain suggestions. This table is reference material for manual review, not an importable marker update.
+
+Do not replace `markers[].label` with suggested names: that field records original evidence, and renamed copies can appear beside the original embedded chapter in Preview. Neither normal handoffs nor held-clip batch updates define marker rename proposals. The UI has no marker edit/accept controls, and **Move clips** preserves embedded markers without rewriting them. Do not rewrite media, sidecars, or app state as part of preparing the review.
+
 ## Prompt for a new conversation
 
 > Use the attached Footage Organizer handoff kit and the review material I provide. Follow its version 1 handoff protocol, preserve existing project clip IDs and current paths, and respect my naming preferences and saved decisions. Propose one filename and destination per clip. Record review limitations; hold unresolved clips and explain the questions. Return an importable handoff JSON plus a readable summary with matching IDs. Do not move footage or modify app state. If required project context or review evidence is missing, tell me what you need before finalizing the handoff.

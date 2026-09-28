@@ -54,6 +54,8 @@ Handoff and batch IDs become saved filenames. Do not use Windows device names su
 
 Example metadata values are illustrative. Read actual metadata for real handoffs. `size` is bytes; `mtimeMs` is milliseconds since the Unix epoch; duration and marker times are seconds. Marker times must be relative to the supplied clip, not its original uncut recording. The preview combines these markers with any readable embedded chapters; it never rewrites either source. Include project-only editing markers in the handoff if they were not embedded in the exported clip.
 
+`markers` records **original evidence**, not proposed changes to marker names. The next-batch kit does not extract markers from new footage, and chapters read during Preview are not saved back into exports. For a marker-name review, obtain the clips and original marker data separately, preserve originals in the handoff, and deliver suggestions in a separate comparison table as described in [Reviewing marker names](AGENT_GUIDE.md#reviewing-marker-names). The app cannot import, accept, or apply marker renames yet.
+
 A separate [example file](examples/handoff.v1.json) shows both a ready clip and a held clip. It is fictional and must not be imported unchanged into a real project.
 
 ## Fields
