@@ -206,3 +206,79 @@ it('preserves a failed save and retries the latest edit without losing unload pr
   window.dispatchEvent(after);
   expect(after.defaultPrevented).toBe(false);
 });
+
+it('keeps imports and review snapshots immutable while undoing nested placement and marker edits', async () => {
+  const clip = {
+    id: 1,
+    currentPath: 'Incoming/Clip.mp4',
+    baseline: null,
+    importIssue: null,
+    original: {
+      id: 1,
+      source: { relativePath: 'Incoming/Clip.mp4' },
+      duration: 3,
+      markers: [{ id: 'one', seconds: 0, label: 'Original', chapterIndex: 0 }],
+      proposed: { folder: 'Filed', filename: 'Suggested.mp4' },
+      rationale: '',
+      questions: [],
+      hold: false,
+    },
+    proposed: { folder: 'Filed', filename: 'Suggested.mp4' },
+    note: '',
+    held: false,
+    applied: false,
+    markerDecisions: [{ markerId: 'one', label: 'Suggestion', status: 'pending' as const }],
+  };
+  const source: Batch = {
+    ...initial,
+    clips: [clip],
+    reviewRequests: [
+      {
+        id: 'request',
+        createdAt: '',
+        batchRevision: 1,
+        batchNotes: '',
+        clips: structuredClone([clip]),
+      },
+    ],
+  };
+  const before = structuredClone(source);
+  let revision = 1;
+  apiMock.mockImplementation(async () => ({ ...source, revision: ++revision }));
+  const { result } = renderHook(() => useDraft('project', source));
+  act(() =>
+    result.current.change((draft) => {
+      draft.folders.push('Reviewed');
+      draft.clips[0].proposed.folder = 'Reviewed';
+      draft.clips[0].markerDecisions![0].status = 'accepted';
+    }),
+  );
+  act(() =>
+    result.current.change((draft) => {
+      draft.clips[0].note = 'Keep this note';
+      draft.clips[0].markerDecisions![0].label = 'Final event';
+    }),
+  );
+  await act(async () => result.current.flush());
+  expect(result.current.batch.clips[0].original).toBe(source.clips[0].original);
+  expect(result.current.batch.reviewRequests).toBe(source.reviewRequests);
+  expect(source).toEqual(before);
+  act(() => result.current.undo());
+  expect(result.current.batch.clips[0]).toMatchObject({
+    note: '',
+    proposed: { folder: 'Reviewed' },
+    markerDecisions: [{ label: 'Suggestion', status: 'accepted' }],
+  });
+  act(() => result.current.undo());
+  expect(result.current.batch.clips).toEqual(source.clips);
+  expect(result.current.batch.folders).toEqual([]);
+  act(() => result.current.redo());
+  act(() => result.current.redo());
+  await act(async () => result.current.flush());
+  expect(apiMock.mock.calls.at(-1)![1].body.clips[0]).toMatchObject({
+    note: 'Keep this note',
+    proposed: { folder: 'Reviewed' },
+    markerDecisions: [{ label: 'Final event', status: 'accepted' }],
+  });
+  expect(source).toEqual(before);
+});

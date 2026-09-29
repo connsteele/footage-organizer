@@ -6,7 +6,7 @@ async function session() {
     throw new Error('Cannot connect to Footage Organizer. Start the local app and reload.');
   const data = await response.json();
   sessionToken = data.token;
-  markerReviewAvailable = data.features?.includes('marker-review-v1') ?? false;
+  markerReviewAvailable = data.features?.includes('marker-editing-v1') ?? false;
 }
 export async function api<T>(
   url: string,
@@ -15,7 +15,7 @@ export async function api<T>(
   if (!sessionToken) await session();
   if (!markerReviewAvailable && url !== '/shutdown')
     throw new Error(
-      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable marker review.',
+      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable marker editing.',
     );
   const response = await fetch(`/api${url}`, {
     method: options.method || 'GET',

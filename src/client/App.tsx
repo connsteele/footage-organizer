@@ -7,12 +7,14 @@ import {
   Power,
   ArrowUpRight,
   BookOpen,
+  Keyboard,
 } from 'lucide-react';
 import type { ProjectSummary } from '../shared/model';
 import { api, errorText } from './api';
 import { Dashboard } from './Dashboard';
 import { Review } from './Review';
 import { HandoffGuide } from './HandoffGuide';
+import { Shortcuts } from './Shortcuts';
 import { Modal } from './Modal';
 import { saveBeforeStop } from './lifecycle';
 import styles from './App.module.css';
@@ -111,6 +113,9 @@ export function App() {
           <button className={styles.textButton} onClick={() => setSettings(true)}>
             App settings <ArrowUpRight size={14} />
           </button>
+          <Link className={styles.textButton} to="/shortcuts">
+            Keyboard shortcuts <Keyboard size={16} />
+          </Link>
           <button
             className={styles.stopButton}
             onClick={stopApp}
@@ -130,6 +135,7 @@ export function App() {
             </div>
           )}
           <Routes>
+            <Route path="/shortcuts" element={<Shortcuts />} />
             <Route path="/" element={<Dashboard projects={projects} refresh={refresh} />} />
             <Route
               path="/handoff-guide"

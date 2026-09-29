@@ -16,7 +16,7 @@ Each person runs their own independent local copy with their own folders and con
 
 ## Run
 
-Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. **FFmpeg** generates practice videos and writes accepted embedded marker names. **ffprobe** reads embedded chapters for kits and previews and verifies marker writing. Ordinary moves, playback and imported markers work without these optional tools.
+Requirements: Windows, Node 22.12+ (Node 24 LTS recommended), and npm. File execution is verified for regular files on local NTFS volumes. **FFmpeg** generates practice videos and writes reviewed embedded marker changes. **ffprobe** reads embedded chapters for kits and previews and verifies marker writing. Ordinary moves, playback and imported markers work without these optional tools.
 
 ```powershell
 cd path\to\footage-organizer
@@ -51,7 +51,7 @@ The plan folder contains authoritative `state.json`, original `imports/`, readab
 
 ## Practice project
 
-With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Ten generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
+With the app stopped and FFmpeg available, run `npm run demo`, then `npm run launch`. Open **Practice project → App feature tour — names, moves, markers, and held review**. Eleven generated 12-second videos use feature names instead of a particular kind of footage. Open each clip's **Details** for the steps.
 
 | Example                      | What to try                                                                                                       |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -67,7 +67,9 @@ With the app stopped and FFmpeg available, run `npm run demo`, then `npm run lau
 
 The **Scroll through many markers** example combines 24 imported review markers and three embedded chapters in the same bounded list. Try scrolling to the last marker, clicking cards to seek, editing names, and collapsing the panel.
 
-Initially eight clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. The marker lesson demonstrates reviewing events before naming the clip, accepting/editing/rejecting names, previewing decisions, and writing accepted embedded names through Move clips.
+The **Add delete and review markers** example starts with three embedded markers and no rename suggestions. Mark an unchanged name Reviewed, delete the start marker, and add a new event at the playhead. Try canceling deletion, restoring it, and Undo/Redo before filing.
+
+Initially nine clips are ready to move, one is held, and one is unchanged. After moving, compare **Remaining**, **Held**, **Filed**, and **All**, then try **Start next batch**. The unchanged clip stays in Remaining because it has no completed file operation. The marker lessons demonstrate reviewing events before naming the clip and writing reviewed changes through Move clips.
 
 These files are safe to edit and move. Re-running the command preserves the feature tour's edits and filed clips and adds missing lessons to the same batch. An older practice project receives this as an additional batch with fresh clip IDs; its earlier batches remain intact. `FO_DEMO_DIR` selects the practice directory (use the existing directory when upgrading); `FFMPEG_PATH` selects FFmpeg if it is not on PATH. Generation refuses to replace an existing file with different contents.
 
@@ -80,7 +82,7 @@ For example, source clips can live under `Video/_incoming/Session 01/` and `Vide
 1. Create a project with its name, stable ID, Root Footage, Review Footage, and Plan folder.
 2. Choose **Start next batch**, confirm this batch's Review Footage folder, and **Download handoff kit**. The kit includes an inventory of supported media, with tracked clips identified. Give it and review material to the review chat. **Save as default review folder** sets or changes this preference for an existing project. **Export project context** remains available as a context-only JSON.
 3. Have that chat produce JSON following [the handoff guide](docs/HANDOFF.md) and [schema](docs/handoff.schema.json).
-4. Import the JSON using **Import handoff** or the drop area.
+4. Import the JSON using **Import handoff** or the drop area. On Start next batch, choose **Import reviewed handoff** or drop one handoff JSON beside that button.
 5. Edit names, drag rows between groups, choose destinations in Details, leave notes, or hold clips. **Preview** expands a player for playback and scrubbing; the adjacent play icon opens the external player. Changes autosave.
 6. Click **Move clips**, review the exact changes, and confirm **Move N clips**.
 7. Review the results. Paths, Markdown, and a move log are saved automatically.
@@ -97,6 +99,10 @@ The app's batch is the review plan created at import. Capture, marking, and cutt
 
 **Marker-name review:** leave embedded marker extraction enabled when downloading the kit. The agent reviews markers and surrounding footage first, then uses those events to suggest the clip filename. In Preview → Markers or Details → Marker names, compare New above Original, then edit, accept, or keep originals. The check icon accepts New; the return arrow keeps Original. Hover for action names, or use the information icon to read the agent’s reasoning. Click a marker card in Preview, or focus it and press Enter or Space, to seek to the marked event. Text fields and review buttons keep their own actions. Acceptance saves the decision; Move clips writes accepted embedded names alongside file changes. Export markers and plan exports retain originals and decisions. See [Reviewing marker names](docs/AGENT_GUIDE.md#reviewing-marker-names).
 
+Every incoming marker starts **Needs review**, including unchanged names. The check marks it **Reviewed**; keeping Original also counts as reviewed. Editing the name or using the reset icon returns it to Needs review. Existing saved decisions retain their review status. The marker panel reports remaining and reviewed counts.
+
+**Delete and add markers:** the trash icon opens a confirmation dialog. Deleted markers disappear from the active list, timeline, and active marker export. Use **Show deleted markers → Restore marker** or Undo before filing. Deleting an embedded marker removes its chapter when you confirm Move clips; the original evidence remains in the saved plan/history. **Add marker** starts at the Preview playhead (or zero in Details); enter a name and time as seconds or HH:MM:SS.mmm. New markers start Reviewed. Leave **Write an embedded chapter with Move clips** checked to embed it, or uncheck for app/export only. Duplicate times and times at or beyond the clip end are rejected. These decisions autosave, survive reloads, and support Undo/Redo.
+
 ## Revisiting held clips
 
 1. Leave your questions in **Your note**, keep the clips held, and open **Agent follow-up → Export held clips for review** in that batch.
@@ -112,7 +118,11 @@ Use **Preview** beside the external-player icon and Details to expand a clip's p
 
 Opening **Preview** or **Details** scrolls the requested panel and clip heading toward the center of the available viewport, leaving room above the bottom Move clips bar. Tall details panels align to their beginning when the whole panel cannot fit. Reduced-motion preferences are respected. The player reserves its space while loading, preventing another jump when metadata arrives.
 
-The marked seek bar below the video combines imported handoff markers with embedded chapter markers. Click a marker to seek without changing the paused/playing state; hover for its time and label, or use the expanded **Markers** panel for closely spaced markers. Markers included in the handoff have name-review controls; additional chapters discovered during playback are available there for seeking. Identical labels at the same time appear once. Times beyond the actual video duration remain listed but disabled. Native fullscreen displays the browser's video controls; the app's marked seek bar remains in the page. LosslessCut project-only markers must be supplied in the handoff with times relative to the exported clip, not the original recording. Previewing never rewrites markers or footage.
+**Playback shortcuts:** while Preview is open, **J** rewinds, **K** pauses, and **L** plays forward. Tap J or L again to increase speed through 1×, 2×, 4×, 8×, and 16×. The opposite key steps down toward pause, then changes direction; after K, the next J or L starts at 1×. Holding a key does not repeat speed changes. Direction and speed appear beneath the video. Keys are ignored while typing, in selection menus/dialogs, and when combined with modifiers. Closing Preview releases the controls. **Keyboard shortcuts** near App settings documents the controls; the practice tour's Video and markers clip can be used to try them.
+
+Forward shuttle uses native video playback. Reverse is silent backward scrubbing with one seek at a time because [negative playback rates are not widely supported by browsers](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/playbackRate). Reverse smoothness depends on the footage and browser; it pauses when the tab is hidden. This implements the J/K/L shuttle workflow, not Resolve's additional key combinations for frame stepping or slow motion.
+
+The marked seek bar below the video combines imported handoff markers with embedded chapter markers. Click a marker to seek without changing the paused/playing state; hover for its time and label, or use the expanded **Markers** panel for closely spaced markers. Additional chapters discovered during playback have the same editing controls; the first decision saves their original chapter evidence in the plan. Identical labels at the same time appear once. Times beyond the actual video duration remain listed but disabled. Native fullscreen displays the browser's video controls; the app's marked seek bar remains in the page. LosslessCut project-only markers must be supplied in the handoff with times relative to the exported clip, not the original recording. Previewing never rewrites markers or footage.
 
 For embedded markers and codec details, put `ffprobe` on PATH, set `FFPROBE_PATH`, or add `"ffprobePath": "D:/Tools/ffmpeg/bin/ffprobe.exe"` to your untracked `organizer.local.json`. The environment variable takes precedence. This optional helper reads only the registered preview file, has a timeout, and runs without a console window. Failed metadata reads leave playback and imported markers available.
 
@@ -120,15 +130,17 @@ For embedded markers and codec details, put `ffprobe` on PATH, set `FFPROBE_PATH
 
 The app streams original media from disk with byte-range support for seeking; it does not load whole videos into JavaScript memory, upload media, create proxies, or transcode files. Browser/OS codec support determines which files play. If a format is unsupported, use **Open in external player**. Preview URLs are temporary and only grant access to one registered clip; reopen the preview after moving the clip or restarting the app. A changed or missing source is reported instead of serving an unverified replacement.
 
-## Writing accepted marker names
+## Writing reviewed marker changes
 
-Move clips lists the accepted embedded names before confirmation. A marker-only change is included even when the filename and folder stay the same. Held clips are skipped; pending and rejected names stay original. Supported containers are MP4, M4V, MOV and MKV, with FFmpeg and ffprobe required. Set FFMPEG_PATH / FFPROBE_PATH or ffmpegPath / ffprobePath in local configuration. When ffprobePath is an absolute path, its sibling ffmpeg.exe is the default writer.
+Move clips lists embedded renames, additions, and deletions before confirmation. A marker-only change is included even when the filename and folder stay the same. Held clips are skipped; unreviewed existing names stay original and unreviewed additions are not written. Supported containers are MP4, M4V, MOV and MKV, with FFmpeg and ffprobe required. Set FFMPEG_PATH / FFPROBE_PATH or ffmpegPath / ffprobePath in local configuration. When ffprobePath is an absolute path, its sibling ffmpeg.exe is the default writer.
 
 The app prepares a new container with [FFmpeg stream copy](https://ffmpeg.org/ffmpeg.html#Streamcopy), verifies chapter labels and timing, stream properties, and copied packet hashes, then retains the original under Root Footage/.footage-organizer-originals/<operation>/<clip> before publishing. The original uses disk space until you deliberately remove it. Allow room for one additional copy during processing; rewriting and verification read the footage several times and are slower than a normal move. Transient container files are staged on the footage volume under .footage-organizer-work so publication can use a same-volume move. These internal folders are excluded from review inventories.
 
 The operation journal records original and prepared identities before publication. Restart recovery inspects them without repeating a rewrite. An interrupted publication can offer **Restore original for retry** in Move history; it refuses occupied paths or changed backups. Failed preparation leaves the source untouched. A failed/interrupted run may retain a staging file for inspection. Project deletion and plan cleanup never delete these footage-volume backups or staging files. The move log records their paths.
 
-Markers without an extracted chapterIndex remain app/export-only. Export markers downloads review JSON, not an editor-specific import or automatic sidecar update. Preview shows accepted plan labels before execution; the external player shows actual file labels. Filed marker decisions are locked; use a fresh handoff to change them later.
+Retained chapter start times stay fixed; chapter end times adjust to the next surviving or added marker. If deleting the start marker leaves the first MP4 chapter after zero, the writer uses the container's Nero chapter table to preserve its time. That fallback supports up to 255 chapters and 255 UTF-8 bytes per title; some players that only read QuickTime chapters may not display these markers. A container without that table fails safely and keeps the original. Use an export-only marker or retain a start chapter if your player requires it.
+
+Imported markers without an extracted chapterIndex remain app/export-only; newly added markers embed only when explicitly selected. Export markers downloads version 2 review JSON with active `markers` and separate `deletedMarkers` audit records, not an editor-specific import or automatic sidecar update. Preview shows accepted plan labels before execution; the external player shows actual file labels. Filed marker decisions are locked; use a fresh handoff to change them later.
 
 ## Deleting projects and cleaning up plans
 
@@ -175,6 +187,8 @@ Vite runs on `127.0.0.1:5173` and proxies `/api` to Express on port 4317. Stop t
 Tests use disposable files under the configured temporary folder (`FO_TEST_DIR` overrides the test location). They cover import identity, stale writes, actual no-replace moves, collision races, partial failures, recovery, API boundaries, autosave sequencing, and the handoff documentation. Browser QA uses generated practice files.
 
 See the [September 27 code audit](docs/AUDIT_2026-09-27.md) for reproduced bugs, regression coverage, testing limits, and recommended workflow improvements.
+
+The [September 28 audit and refactor review](docs/AUDIT_2026-09-28.md) covers the marker workflow, large batches, shared validation, draft memory use, storage failure cleanup, performance measurements, and remaining improvement opportunities.
 
 Regenerate the handoff schema with `npm run schema`. Convert the earlier placement proposal and inventory with:
 

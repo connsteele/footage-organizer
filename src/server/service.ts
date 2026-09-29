@@ -36,7 +36,7 @@ import { cleanupProjectPlans } from './projectCleanup.js';
 import {
   initialMarkerDecisions,
   markerChanges,
-  validateMarkerDecisions,
+  validateLocalMarkers,
   validateMarkerProposals,
 } from '../shared/markers.js';
 import { inspectMedia } from './mediaInfo.js';
@@ -275,6 +275,9 @@ export class Organizer {
       if (new Set(handoff.clips.map((c) => c.id)).size !== handoff.clips.length)
         throw new AppError('The handoff contains duplicate clip IDs.');
       const sourceSet = new Set<string>();
+      const catalogIdsByPath = new Map(
+        Object.entries(state.catalog).map(([id, clip]) => [clip.path.toLowerCase(), id]),
+      );
       const reviewFolder =
         handoff.reviewFolder === undefined
           ? undefined
@@ -318,10 +321,9 @@ export class Organizer {
           throw new AppError(
             `Clip ${clip.id} already refers to ${catalog.path}. IDs must be preserved.`,
           );
-        const other = Object.entries(state.catalog).find(
-          ([id, c]) => id !== String(clip.id) && c.path.toLowerCase() === key,
-        );
-        if (other) throw new AppError(`This file already has ID ${other[0]}. Use its existing ID.`);
+        const existingId = catalogIdsByPath.get(key);
+        if (existingId !== undefined && existingId !== String(clip.id))
+          throw new AppError(`This file already has ID ${existingId}. Use its existing ID.`);
         let baseline = null;
         let importIssue: string | null = null;
         try {
@@ -353,6 +355,7 @@ export class Organizer {
             : {}),
         });
         state.catalog[String(clip.id)] = { path: clip.source.relativePath, baseline };
+        catalogIdsByPath.set(key, String(clip.id));
       }
       batch.folders = [
         ...new Set([
@@ -385,8 +388,9 @@ export class Organizer {
         new Set(edit.clips.map((c) => c.id)).size !== batch.clips.length
       )
         throw new AppError('The batch must retain all original clip IDs.');
+      const clipsById = new Map(batch.clips.map((clip) => [clip.id, clip]));
       for (const change of edit.clips) {
-        const clip = batch.clips.find((c) => c.id === change.id);
+        const clip = clipsById.get(change.id);
         if (!clip) throw new AppError('Unknown clip ID.');
         if (
           clip.applied &&
@@ -399,16 +403,20 @@ export class Organizer {
         clip.proposed = { ...change.proposed };
         clip.note = change.note;
         clip.held = change.held;
-        if (change.markerDecisions !== undefined) {
-          validateMarkerDecisions(clip.original.markers, change.markerDecisions);
+        if (change.markerDecisions !== undefined || change.localMarkers !== undefined) {
+          const localMarkers = change.localMarkers ?? clip.localMarkers;
+          const markerDecisions = change.markerDecisions ?? clip.markerDecisions;
+          validateLocalMarkers({ ...clip, localMarkers, markerDecisions });
           if (
             clip.applied &&
-            JSON.stringify(clip.markerDecisions ?? []) !== JSON.stringify(change.markerDecisions)
+            (JSON.stringify(clip.markerDecisions ?? []) !== JSON.stringify(markerDecisions ?? []) ||
+              JSON.stringify(clip.localMarkers ?? []) !== JSON.stringify(localMarkers ?? []))
           )
             throw new AppError(
               'Filed marker decisions are locked. Use a fresh handoff to review this file again.',
             );
-          clip.markerDecisions = change.markerDecisions;
+          clip.markerDecisions = markerDecisions;
+          clip.localMarkers = localMarkers;
         }
       }
       batch.folders = [...new Set(edit.folders.map((f) => relativePath(f, true)))];

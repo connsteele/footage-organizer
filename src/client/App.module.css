@@ -520,6 +520,114 @@
 .guideCard .guideDownloads {
   margin-top: 18px;
 }
+.handoffImport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+}
+.handoffDrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1 1 300px;
+  min-width: 0;
+  min-height: 90px;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: var(--text-body);
+}
+.handoffDrop svg {
+  flex-shrink: 0;
+}
+.handoffDropActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.handoffDrop[aria-disabled='true'] {
+  opacity: 0.55;
+}
+.shortcutList {
+  margin: 20px 0;
+}
+.shortcutList > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+.shortcutList dd {
+  margin: 0;
+  color: var(--muted);
+}
+.shortcutList kbd,
+.shuttleStatus kbd {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+}
+.shuttleStatus {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+.shuttleStatus > :first-child {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.defaultReviewFolder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 16px;
+}
+.defaultReviewFolder .secondary {
+  white-space: normal;
+  text-align: left;
+}
+.kitExport {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.kitExport h3 {
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+.kitMarkerOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: fit-content;
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+.kitMarkerOption input {
+  flex: 0 0 auto;
+  margin: 0.25em 0 0;
+}
+.guideCard .kitMarkerHint {
+  margin: 6px 0 0 28px;
+}
 .protocolDetails {
   margin-top: 24px;
   border-top: 1px solid var(--line);
@@ -1607,6 +1715,31 @@
 .markerReview {
   grid-column: 1 / -1;
   min-width: 0;
+}
+.markerToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+.deletedMarker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.markerReview .form .kitMarkerOption {
+  display: flex;
+  align-items: flex-start;
+}
+.markerReview .form .kitMarkerOption input {
+  width: auto;
 }
 .markerComparison {
   display: grid;

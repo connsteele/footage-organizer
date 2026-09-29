@@ -20,7 +20,11 @@ import {
   sameFile,
 } from './paths.js';
 import type { Store } from './store.js';
-import { initialMarkerDecisions, validateMarkerProposals } from '../shared/markers.js';
+import {
+  initialMarkerDecisions,
+  sourceMarkers,
+  validateMarkerProposals,
+} from '../shared/markers.js';
 
 function getBatch(state: ProjectState, id: string) {
   const batch = state.batches.find((b) => b.id === id);
@@ -86,7 +90,17 @@ export class ReviewUpdates {
           `Clip ${suggestion.id} was not included in this held-clip review request.`,
         );
       const problem = filenameProblem(suggestion.proposed.filename);
-      validateMarkerProposals(exported.original.markers, suggestion.markerProposals);
+      validateMarkerProposals(sourceMarkers(exported), suggestion.markerProposals);
+      if (
+        suggestion.markerProposals?.items.some((m) =>
+          exported.markerDecisions?.some(
+            (d) => d.markerId === m.markerId && d.status === 'deleted',
+          ),
+        )
+      )
+        throw new AppError(
+          'An update cannot rename a deleted marker. Restore it in the app and export a fresh review.',
+        );
       if (problem) throw new AppError(`Clip ${suggestion.id}: ${problem}`);
       if (
         path.extname(exported.currentPath).toLowerCase() !==
@@ -106,7 +120,9 @@ export class ReviewUpdates {
           current.note !== exported.note ||
           JSON.stringify(current.proposed) !== JSON.stringify(exported.proposed) ||
           JSON.stringify(current.agentReview) !== JSON.stringify(exported.agentReview) ||
-          JSON.stringify(current.markerDecisions) !== JSON.stringify(exported.markerDecisions)
+          JSON.stringify(current.markerDecisions ?? []) !==
+            JSON.stringify(exported.markerDecisions ?? []) ||
+          JSON.stringify(current.localMarkers ?? []) !== JSON.stringify(exported.localMarkers ?? [])
         )
           conflicts.push('Your notes or suggestions changed after this review was exported.');
         if (

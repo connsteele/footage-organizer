@@ -43,3 +43,15 @@ it('keeps filed or otherwise locked filenames disabled', async () => {
   await user.type(input, 'Replacement');
   expect(screen.getByLabelText('Saved filename').textContent).toBe('Chapter 1. Opening.MP4');
 });
+
+it('caps typed and pasted names at the filename limit including the fixed extension', async () => {
+  const user = userEvent.setup();
+  render(<Editor />);
+  const input = screen.getByRole('textbox', { name: 'Clip filename' }) as HTMLInputElement;
+  await user.clear(input);
+  await user.paste('A'.repeat(300));
+  expect(input.value).toHaveLength(251);
+  expect(screen.getByLabelText('Saved filename').textContent).toBe(`${'A'.repeat(251)}.MP4`);
+  await user.type(input, 'B');
+  expect(input.value).toHaveLength(251);
+});

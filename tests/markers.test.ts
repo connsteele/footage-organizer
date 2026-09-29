@@ -8,7 +8,12 @@ import { loadConfig } from '../src/server/config';
 import { moveWithoutReplacement } from '../src/server/move';
 import { reviewInventory } from '../src/server/reviewFolders';
 import { editOf, isPending, type Handoff } from '../src/shared/model';
-import { markerExport, validateMarkerProposals } from '../src/shared/markers';
+import {
+  markerExport,
+  validateMarkerProposals,
+  needsMarkerReview,
+  effectiveMarkers,
+} from '../src/shared/markers';
 import { validateHandoff } from '../scripts/validate-handoff';
 
 const scratch = path.resolve(
@@ -93,6 +98,94 @@ async function accept(f: Awaited<ReturnType<typeof fixture>>, rename = false) {
   if (rename) edit.clips[0].proposed = { folder: 'Filed', filename: 'New.mp4' };
   return f.service.saveBatch('markers', 'batch', edit);
 }
+
+it('persists add/delete/review decisions, exports active markers separately, and restores via an earlier edit', async () => {
+  const f = await fixture();
+  const before = editOf(f.batch);
+  const edit = structuredClone(before);
+  edit.clips[0].markerDecisions![0].status = 'deleted';
+  edit.clips[0].localMarkers = [
+    { origin: 'added', id: 'added-new', seconds: 1.5, label: 'New event', writeToFile: true },
+  ];
+  edit.clips[0].markerDecisions!.push({
+    markerId: 'added-new',
+    label: 'New event',
+    status: 'accepted',
+  });
+  const batch = await f.service.saveBatch('markers', 'batch', edit);
+  expect(needsMarkerReview(batch.clips[0])).toBe(1);
+  expect(effectiveMarkers(batch.clips[0]).map((m) => m.label)).toEqual([
+    'Editor note',
+    'New event',
+  ]);
+  const exported = markerExport(batch.clips[0]);
+  expect(exported.deletedMarkers[0].label).toBe('Old event');
+  expect(exported.markers.map((m) => m.label)).toEqual(['Editor note', 'New event']);
+  const review = await f.service.review('markers', 'batch');
+  expect(review.items[0].markerChanges!.map((c) => c.action)).toEqual(['delete', 'add']);
+  expect(await readFile(path.join(f.media, 'Clip.mp4'), 'utf8')).toBe('original media');
+  before.revision = batch.revision;
+  // Undo includes empty local collections, so additions are actually removed.
+  before.clips[0].localMarkers = [];
+  const restored = await f.service.saveBatch('markers', 'batch', before);
+  expect(restored.clips[0].original.markers).toEqual(markers);
+  expect(effectiveMarkers(restored.clips[0]).map((m) => m.label)).toEqual([
+    'Old event',
+    'Editor note',
+  ]);
+});
+
+it('undoes the first decision on a discovered chapter when legacy state has no marker fields', async () => {
+  const f = await fixture();
+  const state = await f.store.load('markers');
+  const clip = state.batches[0].clips[0];
+  clip.original.markers = [];
+  delete clip.original.markerProposals;
+  delete clip.markerDecisions;
+  delete clip.localMarkers;
+  await f.store.save(state);
+  const before = editOf(state.batches[0]);
+  const edit = structuredClone(before);
+  edit.clips[0].localMarkers = [
+    {
+      id: 'preview-chapter-0',
+      origin: 'discovered',
+      chapterIndex: 0,
+      seconds: 0,
+      label: 'Old event',
+    },
+  ];
+  edit.clips[0].markerDecisions = [
+    { markerId: 'preview-chapter-0', label: 'Old event', status: 'deleted' },
+  ];
+  const changed = await f.service.saveBatch('markers', 'batch', edit);
+  before.revision = changed.revision;
+  const restored = await f.service.saveBatch('markers', 'batch', before);
+  expect(restored.clips[0].markerDecisions).toEqual([]);
+  expect(restored.clips[0].localMarkers).toEqual([]);
+});
+
+it('rejects duplicate/out-of-range local markers and locks additions after filing', async () => {
+  const f = await fixture();
+  for (const seconds of [1, 2]) {
+    const edit = editOf(f.batch);
+    edit.clips[0].localMarkers = [
+      { origin: 'added', id: 'added-new', seconds, label: 'Event', writeToFile: true },
+    ];
+    await expect(f.service.saveBatch('markers', 'batch', edit)).rejects.toThrow(
+      /already exists|before the end/,
+    );
+  }
+  await accept(f);
+  const review = await f.service.review('markers', 'batch');
+  await f.service.startMove('markers', 'batch', review.id);
+  await f.service.waitForIdle();
+  const edit = editOf((await f.store.load('markers')).batches[0]);
+  edit.clips[0].localMarkers = [
+    { origin: 'added', id: 'added-new', seconds: 1.5, label: 'Event', writeToFile: false },
+  ];
+  await expect(f.service.saveBatch('markers', 'batch', edit)).rejects.toThrow('locked');
+});
 
 it('validates identity, original label and time, including duplicate timestamps and legacy IDs', () => {
   expect(() => validateMarkerProposals(markers, markerProposals)).not.toThrow();
@@ -271,6 +364,66 @@ it('held follow-ups preserve originals and detect marker decisions changed after
   expect(
     (await f.service.updates.preview('markers', 'batch', update)).clips[0].conflicts,
   ).toContain('Your notes or suggestions changed after this review was exported.');
+});
+
+it('held follow-ups include added markers, reject deleted ones and detect changed local evidence', async () => {
+  const f = await fixture();
+  const edit = editOf(f.batch);
+  edit.clips[0].held = true;
+  edit.clips[0].markerDecisions![0].status = 'deleted';
+  edit.clips[0].localMarkers = [
+    { id: 'added-note', origin: 'added', seconds: 1.5, label: 'New note', writeToFile: false },
+  ];
+  edit.clips[0].markerDecisions!.push({
+    markerId: 'added-note',
+    label: 'New note',
+    status: 'accepted',
+  });
+  await f.service.saveBatch('markers', 'batch', edit);
+  const { request } = await f.service.updates.exportHeld('markers', 'batch');
+  expect(request.clips[0].localMarkers).toEqual(edit.clips[0].localMarkers);
+  const update = {
+    schemaVersion: 1,
+    kind: 'batch-update',
+    updateId: 'local-followup',
+    requestId: request.id,
+    projectId: 'markers',
+    batchId: 'batch',
+    createdAt: new Date().toISOString(),
+    clips: [
+      {
+        id: 1,
+        proposed: edit.clips[0].proposed,
+        rationale: 'Reviewed new event',
+        markerProposals: {
+          schemaVersion: 1,
+          items: [
+            {
+              markerId: 'added-note',
+              seconds: 1.5,
+              originalLabel: 'New note',
+              proposedLabel: 'Clearer new note',
+              rationale: '',
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const preview = await f.service.updates.preview('markers', 'batch', update);
+  expect(preview.clips[0].conflicts).toEqual([]);
+  const deleted = structuredClone(update);
+  deleted.clips[0].markerProposals.items = [markerProposals.items[0]];
+  await expect(f.service.updates.preview('markers', 'batch', deleted)).rejects.toThrow(
+    'deleted marker',
+  );
+  const changed = editOf((await f.store.load('markers')).batches[0]);
+  if (changed.clips[0].localMarkers![0].origin === 'added')
+    changed.clips[0].localMarkers![0].writeToFile = true;
+  await f.service.saveBatch('markers', 'batch', changed);
+  expect(
+    (await f.service.updates.preview('markers', 'batch', update)).clips[0].conflicts,
+  ).not.toEqual([]);
 });
 
 it('retains unmentioned marker decisions and reasoning across successive held follow-ups', async () => {

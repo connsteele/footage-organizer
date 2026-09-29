@@ -5,13 +5,21 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { ClipPreview } from '../src/client/ClipPreview';
 import { MarkerReview } from '../src/client/MarkerReview';
-import type { BatchClip } from '../src/shared/model';
+import { type BatchClip, type Batch } from '../src/shared/model';
+import { ClipRow } from '../src/client/ClipRow';
+import { batchMarkdown } from '../src/shared/markdown';
 
 const apiMock = vi.hoisted(() => vi.fn());
 vi.mock('../src/client/api', () => ({ api: apiMock, errorText: (e: Error) => e.message }));
 beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
   vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
   apiMock.mockResolvedValueOnce({ url: '/api/media/ticket' }).mockResolvedValueOnce({
     video: null,
     audio: [],
@@ -81,6 +89,69 @@ function Editor({ preview = false, locked = false, applied = false, initial = fi
   );
 }
 
+it('starts unchanged markers needing review and permits explicit review without a rename', async () => {
+  const initial = fixture();
+  initial.original.markerProposals = undefined;
+  initial.markerDecisions = [];
+  render(<Editor initial={initial} />);
+  const user = userEvent.setup();
+  expect(screen.getByText(/Needs review/)).toBeTruthy();
+  const accept = screen.getByRole('button', { name: 'Accept name for marker chapter-1' });
+  expect(accept.title).toBe('Mark reviewed');
+  await user.click(accept);
+  expect(screen.getByText('Embedded chapter · Reviewed')).toBeTruthy();
+  await user.type(screen.getByRole('textbox'), ' change');
+  expect(screen.getByText(/Needs review/)).toBeTruthy();
+});
+
+it('confirms deletion, hides deleted timeline markers, and restores them without changing the player', async () => {
+  render(<Editor preview />);
+  const user = userEvent.setup();
+  const player = await screen.findByLabelText('Video for clip 001');
+  Object.defineProperty(player, 'duration', { configurable: true, value: 12 });
+  fireEvent.loadedMetadata(player);
+  await user.click(screen.getByRole('button', { name: 'Delete marker chapter-1' }));
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getAllByRole('button', { name: /^Jump to/ })).toHaveLength(1);
+  await user.click(screen.getByRole('button', { name: 'Delete marker chapter-1' }));
+  await user.click(
+    within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete marker' }),
+  );
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Jump to/ })).toBeNull();
+  await user.click(screen.getByRole('button', { name: /Show deleted markers/ }));
+  await user.click(screen.getByRole('button', { name: 'Restore marker' }));
+  expect(screen.getAllByRole('button', { name: /^Jump to/ })).toHaveLength(1);
+  expect(screen.getByLabelText('Video for clip 001')).toBe(player);
+});
+
+it('adds a reviewed marker at the playhead and validates duplicate/end timestamps', async () => {
+  render(<Editor preview />);
+  const user = userEvent.setup();
+  const player = (await screen.findByLabelText('Video for clip 001')) as HTMLVideoElement;
+  Object.defineProperty(player, 'duration', { configurable: true, value: 12 });
+  fireEvent.loadedMetadata(player);
+  player.currentTime = 6;
+  await user.click(screen.getByRole('button', { name: 'Add marker' }));
+  const dialog = within(screen.getByRole('dialog'));
+  expect((dialog.getByLabelText('Time') as HTMLInputElement).value).toBe('00:06.000');
+  await user.type(dialog.getByLabelText('Marker name'), 'New event');
+  await user.clear(dialog.getByLabelText('Time'));
+  await user.type(dialog.getByLabelText('Time'), '4');
+  await user.click(dialog.getByRole('button', { name: 'Add marker' }));
+  expect(dialog.getByRole('alert').textContent).toContain('already exists');
+  await user.clear(dialog.getByLabelText('Time'));
+  await user.type(dialog.getByLabelText('Time'), '12');
+  await user.click(dialog.getByRole('button', { name: 'Add marker' }));
+  expect(dialog.getByRole('alert').textContent).toContain('before the end');
+  await user.clear(dialog.getByLabelText('Time'));
+  await user.type(dialog.getByLabelText('Time'), '6');
+  await user.click(dialog.getByRole('button', { name: 'Add marker' }));
+  expect(screen.getByRole('button', { name: 'Jump to 00:06.000: New event' })).toBeTruthy();
+  expect(screen.getByText('New chapter · Reviewed')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
 it('compares New above Original with icon actions and reasoning available on demand', async () => {
   render(<Editor />);
   const user = userEvent.setup();
@@ -92,7 +163,7 @@ it('compares New above Original with icon actions and reasoning available on dem
   expect(screen.getByText('Time:', { exact: false })).toBeTruthy();
   const accept = screen.getByRole('button', { name: 'Accept name for marker chapter-1' });
   expect(accept.textContent).toBe('');
-  expect(accept.title).toBe('Accept name');
+  expect(accept.title).toBe('Accept name and mark reviewed');
   const reason = screen.getByText('The visible event explains this name.');
   expect(reason.hidden).toBe(true);
   await user.click(screen.getByRole('button', { name: 'Why this name for marker chapter-1?' }));
@@ -188,7 +259,7 @@ it('combines imported name review and playback-only chapters once, in time order
   await user.click(times[3]);
   expect(player.currentTime).toBe(9);
   await user.click(panel.getByRole('button', { name: 'Accept name for marker chapter-1' }));
-  expect(panel.getAllByRole('textbox')).toHaveLength(2);
+  expect(panel.getAllByRole('textbox')).toHaveLength(4);
   expect(panel.getAllByText('Original chapter', { exact: true })).toHaveLength(1);
   expect(panel.queryByRole('button', { name: 'Time: 00:04.000 Original chapter' })).toBeNull();
   await user.click(screen.getByText('Markers', { exact: true }));
@@ -236,4 +307,41 @@ it('seeks from the review card with pointer or keyboard while keeping edit contr
   }
   expect(onChange).toHaveBeenCalled();
   expect(onSeek).not.toHaveBeenCalled();
+});
+
+it('describes marker-only changes as pending work in the row and Markdown export', () => {
+  const clip = fixture();
+  clip.proposed = { folder: 'Incoming', filename: 'Clip.mp4' };
+  clip.markerDecisions![0].status = 'accepted';
+  render(
+    <ClipRow
+      clip={clip}
+      choices={['Incoming']}
+      locked={false}
+      onChange={vi.fn()}
+      onPlay={vi.fn()}
+      prefix="/test"
+      previewOpen={false}
+      onPreview={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('Update markers')).toBeTruthy();
+  expect(screen.queryByText('Unchanged')).toBeNull();
+  const batch: Batch = {
+    id: 'batch',
+    handoffId: 'handoff',
+    title: 'Marker-only review',
+    importedAt: '',
+    revision: 1,
+    folders: [],
+    reviewNotes: '',
+    notes: '',
+    clips: [clip],
+  };
+  const markdown = batchMarkdown(
+    { id: 'test', name: 'Test', mediaRoot: 'D:/Media', dataDir: 'D:/Plans', namingNotes: '' },
+    batch,
+  );
+  expect(markdown).toContain('| Pending |');
+  expect(markdown).not.toContain('| Unchanged |');
 });

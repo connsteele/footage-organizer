@@ -25,7 +25,7 @@ afterAll(async () => {
   }
 });
 
-it('adds the scrolling lesson once without regenerating or changing existing edited and filed clips', async () => {
+it('adds new lessons once without regenerating or changing existing edited and filed clips', async () => {
   const root = await mkdtemp(path.join(scratch, 'practice-upgrade-'));
   roots.push(root);
   const media = path.join(root, 'media');
@@ -41,7 +41,7 @@ it('adds the scrolling lesson once without regenerating or changing existing edi
     dataDir: path.join(root, 'plans'),
   });
   const handoff = practiceHandoff(41);
-  handoff.clips.pop(); // Previous tour: nine clips, including the marker-name lesson.
+  handoff.clips = handoff.clips.slice(0, 9); // Previous tour, including the marker-name lesson.
   for (const clip of handoff.clips)
     await writeFile(await safePath(media, clip.source.relativePath, true), `existing ${clip.id}`);
   const batch = await service.importHandoff('practice', handoff);
@@ -82,7 +82,14 @@ it('adds the scrolling lesson once without regenerating or changing existing edi
     expect(added.id).toBe(50);
     expect(added.original.markers).toHaveLength(24);
     expect(added.original.rationale).toContain('Scroll inside');
-    expect(generation.mock.calls[0][4]).toEqual([added.original.source.relativePath]);
+    const editing = after.batches[0].clips[10];
+    expect(editing.id).toBe(51);
+    expect(editing.original.markers).toHaveLength(3);
+    expect(editing.original.rationale).toContain('Needs review');
+    expect(generation.mock.calls[0][4]).toEqual([
+      added.original.source.relativePath,
+      editing.original.source.relativePath,
+    ]);
     expect(await upgradePracticeTour(store, scratch)).toBe(false);
     expect(generation).toHaveBeenCalledTimes(1);
     expect(await readFile(path.join(media, before.batches[0].clips[0].currentPath), 'utf8')).toBe(
@@ -93,7 +100,7 @@ it('adds the scrolling lesson once without regenerating or changing existing edi
   }
 });
 
-it('teaches eight moves, a hold and an unchanged clip without replacing an earlier practice batch', async () => {
+it('teaches nine moves, a hold and an unchanged clip without replacing an earlier practice batch', async () => {
   const root = await mkdtemp(path.join(scratch, 'practice-'));
   roots.push(root);
   const media = path.join(root, 'media');
@@ -138,7 +145,7 @@ it('teaches eight moves, a hold and an unchanged clip without replacing an earli
   const batch = await service.importHandoff('practice', handoff);
   const review = await service.review('practice', batch.id);
   expect(review.issues).toEqual([]);
-  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50]);
+  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50, 51]);
   expect(review.held).toBe(1);
   expect(review.unchanged).toBe(1);
   expect(review.newFolders).toEqual([handoff.clips[7].proposed.folder]);
@@ -155,7 +162,7 @@ it('teaches eight moves, a hold and an unchanged clip without replacing an earli
   expect(after.batches.find((b) => b.id === oldBatch.id)).toEqual(before.batches[0]);
   expect(await readFile(path.join(media, 'Earlier.mp4'), 'utf8')).toBe('earlier footage');
   const filed = after.batches.find((b) => b.id === batch.id)!;
-  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(8);
+  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(9);
   expect(filed.clips.filter((clip) => !clip.applied).map((clip) => clip.id)).toEqual([45, 47]);
   for (const item of review.items)
     expect(await readFile(path.join(media, item.to), 'utf8')).toBe(

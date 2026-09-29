@@ -52,6 +52,7 @@ export function buildHandoffKit(
         markers: clip.original.markers,
         markerProposals: clip.original.markerProposals,
         markerDecisions: clip.markerDecisions,
+        localMarkers: clip.localMarkers,
       })),
     })),
   };
@@ -60,6 +61,7 @@ export function buildHandoffKit(
     'This file is reference material for a review agent. It is not an import handoff. Read the guides below, use this project snapshot, and return a separate version 1 handoff JSON. The user reviews and executes the result in the app.',
     'The snapshot includes saved project data, not video or a complete disk inventory. Refresh it after edits or moves. Batch currentPath values describe that batch; the catalog is the current registered source of truth after moves. For the complete history and original suggestions in a batch, request its Export plan.',
     'Review markers FIRST: inspect the footage around each marker, suggest clear event names, then use that event sequence to propose the overall clip filename and destination. Explain that connection in the clip rationale. Preserve original markers (including id and chapterIndex) and return markerProposals separately in the handoff. Extracted chapter names and times are in reviewInventory.files[].markers when markerStatus is read. Unavailable, not-scanned, or omitted markerStatus means missing evidence, not an empty clip. Editor-only markers still need to be supplied separately.',
+    'Always consider the original incoming filename in reviewInventory.files[].relativePath alongside the footage, markers, user notes, and project naming preferences. Marker review adds context; it does not replace filename context. Carry forward useful identifiers, subjects, and event details unless the evidence or user instructions justify a correction. Explain meaningful changes or conflicts in the clip rationale, and keep the existing name when it already fits.',
     inventory
       ? 'Review only the media listed in reviewInventory for this batch. Copy reviewInventory.folder into the handoff reviewFolder field. Sources and destinations remain relative to Root Footage. Files with existingClipId already belong to this project: do not silently include them in a new batch; resolve held clips through their existing batch’s Agent follow-up. Assign new IDs starting at nextClipId to new files. The inventory provides paths, sizes and timestamps, not evidence of video content; inspect the supplied clips or clearly state what evidence is missing.'
       : 'Choose Review Footage in the app to add a scoped file inventory to the next kit.',

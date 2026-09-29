@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { editOf, type Batch } from '../shared/model';
+import { editOf, type Batch, type BatchEdit } from '../shared/model';
 import { api, errorText } from './api';
 import { registerPendingSave } from './lifecycle';
 interface History {
@@ -95,9 +95,18 @@ export function useDraft(projectId: string, initial: Batch) {
       window.removeEventListener('beforeunload', prevent);
     };
   }, []);
-  function change(update: (batch: Batch) => void) {
-    const batch = structuredClone(current.current);
-    update(batch);
+  function change(update: (batch: BatchEdit) => void) {
+    // Only decisions are editable. Share immutable imports and audit history between
+    // undo snapshots instead of copying every marker proposal on each keystroke.
+    const edit = structuredClone(editOf(current.current));
+    update(edit);
+    const clipsById = new Map(edit.clips.map((clip) => [clip.id, clip]));
+    const batch: Batch = {
+      ...current.current,
+      notes: edit.notes,
+      folders: edit.folders,
+      clips: current.current.clips.map((clip) => ({ ...clip, ...clipsById.get(clip.id) })),
+    };
     current.current = batch;
     generation.current++;
     dispatch({ type: 'edit', batch });

@@ -1,5 +1,18 @@
-import { clipLabel, targetPath, type Batch, type Operation, type Project } from './model.js';
-import { identifiedMarkers } from './markers.js';
+import {
+  clipLabel,
+  targetPath,
+  isPending,
+  type Batch,
+  type Operation,
+  type Project,
+} from './model.js';
+import {
+  sourceMarkers,
+  writesMarker,
+  markerDecisionsById,
+  markerSuggestionsById,
+} from './markers.js';
+import { groupClipsByFolder } from './clipGroups.js';
 const cell = (text: string) => text.replaceAll('|', '\\|').replaceAll('\n', '<br>');
 export function batchMarkdown(project: Project, batch: Batch, operations: Operation[] = []) {
   const lines = [
@@ -22,21 +35,16 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     batch.notes || 'No additional notes.',
     '',
   ];
-  for (const folder of [...new Set(batch.clips.map((c) => c.proposed.folder))].sort()) {
+  const groups = groupClipsByFolder(batch.clips);
+  for (const folder of [...groups.keys()].sort()) {
     lines.push(
       `## ${folder || 'Media root'}`,
       '',
       '| ID | Current path | Proposed path | Status | Rationale / notes |',
       '|---|---|---|---|---|',
     );
-    for (const c of batch.clips.filter((c) => c.proposed.folder === folder)) {
-      const status = c.applied
-        ? 'Moved'
-        : c.held
-          ? 'Held'
-          : c.currentPath === targetPath(c)
-            ? 'Unchanged'
-            : 'Pending';
+    for (const c of groups.get(folder)!) {
+      const status = c.applied ? 'Moved' : c.held ? 'Held' : isPending(c) ? 'Pending' : 'Unchanged';
       lines.push(
         `| ${clipLabel(c.id)} | ${cell(c.currentPath)} | ${cell(targetPath(c))} | ${status} | ${cell([`Original review: ${c.original.rationale}`, ...(c.agentReview ? [`Latest follow-up: ${c.agentReview.rationale}`, ...c.agentReview.questions] : c.original.questions), c.note && `Your note: ${c.note}`, c.importIssue ?? ''].filter(Boolean).join('\n'))} |`,
       );
@@ -63,20 +71,20 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     }
     lines.push('');
   }
-  for (const clip of batch.clips.filter((c) => c.original.markers.length)) {
+  for (const clip of batch.clips.filter((c) => sourceMarkers(c).length)) {
     lines.push(
       `## Clip ${clipLabel(clip.id)} — marker review`,
       '',
       '| Time (seconds) | Original | Suggested / edited | Decision | Reason |',
       '|---|---|---|---|---|',
     );
-    for (const marker of identifiedMarkers(clip.original.markers)) {
-      const decision = clip.markerDecisions?.find((d) => d.markerId === marker.id);
-      const proposal =
-        clip.agentReview?.markerProposals?.items.find((p) => p.markerId === marker.id) ??
-        clip.original.markerProposals?.items.find((p) => p.markerId === marker.id);
+    const decisions = markerDecisionsById(clip);
+    const proposals = markerSuggestionsById(clip);
+    for (const marker of sourceMarkers(clip)) {
+      const decision = decisions.get(marker.id);
+      const proposal = proposals.get(marker.id);
       lines.push(
-        `| ${marker.seconds} | ${cell(marker.label)} | ${cell(decision?.label ?? proposal?.proposedLabel ?? marker.label)} | ${decision?.status ?? 'unchanged'}${marker.chapterIndex === undefined ? ' (export only)' : clip.applied && decision?.status === 'accepted' ? ' (written)' : ''} | ${cell(proposal?.rationale ?? '')} |`,
+        `| ${marker.seconds} | ${cell(marker.label)} | ${cell(decision?.label ?? proposal?.proposedLabel ?? marker.label)} | ${decision?.status ?? 'needs review'}${marker.origin === 'added' ? ' (added)' : ''}${!writesMarker(marker) ? ' (export only)' : clip.applied && ['accepted', 'deleted'].includes(decision?.status ?? '') ? ' (written)' : ''} | ${cell(proposal?.rationale ?? '')} |`,
       );
     }
     lines.push('');

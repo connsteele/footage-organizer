@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Download, Upload } from 'lucide-react';
+import { Download, Save } from 'lucide-react';
 import type { ProjectState, ProjectSummary, ReviewInventory } from '../shared/model';
 import { api, download, errorText } from './api';
 import { buildHandoffKit, handoffDocuments } from './handoffKit';
 import { useHandoffImport } from './useHandoffImport';
 import { FolderField } from './FolderField';
+import { HandoffImportArea } from './HandoffImportArea';
 import styles from './App.module.css';
 
 export function HandoffGuide({
@@ -20,7 +21,9 @@ export function HandoffGuide({
   const { projectId } = useParams();
   const navigate = useNavigate();
   const project = projects.find((p) => p.id === projectId);
-  const [busy, setBusy] = useState(false);
+  const [task, setTask] = useState<'folder' | 'kit' | null>(null);
+  const busy = task !== null;
+  const markerHelpId = useId();
   const [error, setError] = useState('');
   const [reviewFolders, setReviewFolders] = useState<Record<string, string>>({});
   const reviewFolder = project
@@ -39,11 +42,10 @@ export function HandoffGuide({
     error: importError,
     importFile,
   } = useHandoffImport(project?.id, refresh, reviewFolder || undefined);
-  const file = useRef<HTMLInputElement>(null);
 
   async function exportKit() {
     if (!project) return;
-    setBusy(true);
+    setTask('kit');
     setError('');
     try {
       const [state, folders, scanned] = await Promise.all([
@@ -71,7 +73,7 @@ export function HandoffGuide({
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setBusy(false);
+      setTask(null);
     }
   }
 
@@ -154,84 +156,98 @@ export function HandoffGuide({
               }}
               help="Choose this batch's incoming clips inside Root Footage. The kit lists supported media in this folder and its subfolders, including which clips already belong to a batch."
             />
-            <button
-              className={styles.textButton}
-              disabled={!reviewFolder.trim() || busy || importing}
-              onClick={async () => {
-                setBusy(true);
-                setError('');
-                try {
-                  await api(`/projects/${project.id}/review-folder`, {
-                    method: 'PUT',
-                    body: { folder: reviewFolder },
-                  });
-                  await refresh();
-                  setNotice('Default review folder saved.');
-                } catch (e) {
-                  setError(errorText(e));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Save as default review folder
-            </button>
-            {notice && <p role="status">{notice}</p>}
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={includeMarkers}
-                disabled={busy || importing}
-                onChange={(e) => {
-                  setIncludeMarkers(e.target.checked);
-                  setInventory(null);
+            <div className={styles.defaultReviewFolder}>
+              <button
+                className={styles.secondary}
+                disabled={!reviewFolder.trim() || busy || importing}
+                onClick={async () => {
+                  setTask('folder');
+                  setError('');
+                  try {
+                    await api(`/projects/${project.id}/review-folder`, {
+                      method: 'PUT',
+                      body: { folder: reviewFolder },
+                    });
+                    await refresh();
+                    setNotice('Default review folder saved.');
+                  } catch (e) {
+                    setError(errorText(e));
+                  } finally {
+                    setTask(null);
+                  }
                 }}
-              />
-              Include embedded markers for name review
-            </label>
-            <p className={styles.guideHint}>
-              Reads chapter names and times with ffprobe. Large batches can take about a minute; any
-              unread files are identified in the kit. Editor-only markers must be supplied
-              separately.
-            </p>
-            {inventory && (
-              <p role="status">
-                Kit ready: {inventory.files.length} media files ·{' '}
-                {inventory.files.filter((f) => f.existingClipId === null).length} new ·{' '}
-                {inventory.files.filter((f) => f.existingClipId !== null).length} already tracked.
-                {inventory.files.some((f) => f.markerStatus) && (
-                  <>
-                    {' '}
-                    {inventory.files.reduce((n, f) => n + (f.markers?.length ?? 0), 0)} markers
-                    extracted · {inventory.files.filter((f) => f.markerStatus !== 'read').length}{' '}
-                    files need marker data.
-                  </>
-                )}
+              >
+                <Save size={17} />
+                {task === 'folder' ? 'Saving default folder…' : 'Save as default review folder'}
+              </button>
+              <p className={styles.guideHint}>
+                Reuse this folder for future batches in this project.
               </p>
-            )}
+            </div>
+            {notice && <p role="status">{notice}</p>}
           </>
         )}
-        <div className={styles.guideDownloads}>
-          <button
-            className={styles.primary}
-            disabled={!project || busy || importing || (nextBatch && !reviewFolder.trim())}
-            onClick={() => void exportKit()}
-          >
-            <Download size={16} /> {busy ? 'Preparing kit…' : 'Download handoff kit'}
-          </button>
-        </div>
-        {!projects.length && (
-          <p>
-            <Link to="/" className={styles.textButton}>
-              Create a project first
-            </Link>{' '}
-            to include your own context.
+        <div className={styles.kitExport} role="group" aria-label="Handoff kit download">
+          <h3>Download options</h3>
+          {project && (
+            <>
+              <label className={styles.kitMarkerOption}>
+                <input
+                  type="checkbox"
+                  aria-describedby={markerHelpId}
+                  checked={includeMarkers}
+                  disabled={busy || importing}
+                  onChange={(e) => {
+                    setIncludeMarkers(e.target.checked);
+                    setInventory(null);
+                  }}
+                />
+                <span>Include embedded markers in the handoff kit</span>
+              </label>
+              <p className={styles.kitMarkerHint} id={markerHelpId}>
+                Include chapter names and times from the footage for the agent to review. Large
+                batches can take about a minute; the kit identifies any unread files. Markers saved
+                only in your editor must be supplied separately.
+              </p>
+            </>
+          )}
+          <div className={styles.guideDownloads}>
+            <button
+              className={styles.primary}
+              disabled={!project || busy || importing || (nextBatch && !reviewFolder.trim())}
+              onClick={() => void exportKit()}
+            >
+              <Download size={16} /> {task === 'kit' ? 'Preparing kit…' : 'Download handoff kit'}
+            </button>
+          </div>
+          {inventory && (
+            <p role="status">
+              Kit ready: {inventory.files.length} media files ·{' '}
+              {inventory.files.filter((f) => f.existingClipId === null).length} new ·{' '}
+              {inventory.files.filter((f) => f.existingClipId !== null).length} already tracked.
+              {inventory.files.some((f) => f.markerStatus) && (
+                <>
+                  {' '}
+                  {inventory.files.reduce((n, f) => n + (f.markers?.length ?? 0), 0)} markers
+                  extracted · {inventory.files.filter((f) => f.markerStatus !== 'read').length}{' '}
+                  files need marker data.
+                </>
+              )}
+            </p>
+          )}
+          {!projects.length && (
+            <p>
+              <Link to="/" className={styles.textButton}>
+                Create a project first
+              </Link>{' '}
+              to include your own context.
+            </p>
+          )}
+          <p className={styles.guideHint}>
+            The kit contains saved paths and notes. It does not include video or change any files.
+            Download a fresh one after edits or moves.
           </p>
-        )}
-        <p className={styles.guideHint}>
-          The kit contains saved paths and notes. It does not include video or change any files.
-          Download a fresh one after edits or moves.
-        </p>
+        </div>
         {error && (
           <div className={styles.error} role="alert">
             {error}
@@ -262,25 +278,11 @@ export function HandoffGuide({
           When the review is ready, choose its handoff JSON. Import creates a batch in the selected
           project and opens it for your edits. Existing batches and their held clips are preserved.
         </p>
-        <input
-          ref={file}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          onChange={(e) => {
-            void importFile(e.target.files?.[0]);
-            e.target.value = '';
-          }}
+        <HandoffImportArea
+          disabled={!project || importing || busy || (nextBatch && !reviewFolder.trim())}
+          importing={importing}
+          onImport={importFile}
         />
-        <div className={styles.guideDownloads}>
-          <button
-            className={styles.primary}
-            disabled={!project || importing || busy || (nextBatch && !reviewFolder.trim())}
-            onClick={() => file.current?.click()}
-          >
-            <Upload size={17} /> {importing ? 'Importing…' : 'Import reviewed handoff'}
-          </button>
-        </div>
         {importError && (
           <div className={styles.error} role="alert">
             {importError}

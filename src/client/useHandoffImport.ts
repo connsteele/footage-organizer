@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Batch } from '../shared/model';
 import { api, errorText } from './api';
@@ -11,9 +11,11 @@ export function useHandoffImport(
   const navigate = useNavigate();
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
+  const pending = useRef(false);
 
   async function importFile(selected?: File) {
-    if (!selected || !projectId || importing) return;
+    if (!selected || !projectId || pending.current) return;
+    pending.current = true;
     setImporting(true);
     setError('');
     try {
@@ -34,6 +36,7 @@ export function useHandoffImport(
     } catch (e) {
       setError(errorText(e));
     } finally {
+      pending.current = false;
       setImporting(false);
     }
   }

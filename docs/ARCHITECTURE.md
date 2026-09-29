@@ -4,23 +4,28 @@ React sends HTTP requests to Express. The `Organizer` service handles imports, e
 
 ## Code map
 
-| File                     | Responsibility                                                       |
-| ------------------------ | -------------------------------------------------------------------- |
-| `src/shared/model.ts`    | Handoff/saved-state schemas, types, shared helpers                   |
-| `src/shared/markdown.ts` | Snapshots with stable IDs                                            |
-| `src/server/service.ts`  | Workflow and execution                                               |
-| `src/server/store.ts`    | Single-writer queue, process locks, atomic state writes, checkpoints |
-| `src/server/paths.ts`    | Names, root containment, junction checks, file identity              |
-| `src/server/move.ts`     | Windows no-replace move and player adapter                           |
-| `src/server/app.ts`      | API and local request checks                                         |
-| `src/client/useDraft.ts` | Editing history, serialized autosave, revision checks                |
-| `src/client/Review.tsx`  | Folder groups, edits, final review, progress, results                |
+| File                                                     | Responsibility                                                               |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `src/shared/model.ts`                                    | Handoff/saved-state schemas, types, shared helpers                           |
+| `src/shared/markdown.ts`                                 | Snapshots with stable IDs                                                    |
+| `src/server/service.ts`                                  | Workflow and execution                                                       |
+| `src/server/store.ts`                                    | Single-writer queue, process locks, atomic state writes, checkpoints         |
+| `src/server/paths.ts`                                    | Names, root containment, junction checks, file identity                      |
+| `src/server/move.ts`                                     | Windows no-replace move and player adapter                                   |
+| `src/server/app.ts`                                      | API and local request checks                                                 |
+| `src/client/useDraft.ts`                                 | Editing history, serialized autosave, revision checks                        |
+| `src/client/Review.tsx`                                  | Folder groups, edits, final review, progress, results                        |
+| `src/client/ClipRow.tsx`, `FolderGroup.tsx`              | Individual clip controls and folder drag targets                             |
+| `src/client/MarkerReview.tsx`, `TimelineMarkers.tsx`     | Marker decisions and seek controls, independent of playback-position updates |
+| `src/shared/markers.ts`, `clipGroups.ts`, `filenames.ts` | Indexed marker decisions, folder grouping, and shared Windows naming rules   |
 
 ## Saving
 
 `state.json` is authoritative. Batch exports, Markdown, and operation files are readable materializations. Writes use a temporary file, flush, and rename. The latest 20 state checkpoints are retained. Original handoffs and operations are not pruned. A materialization error is reported even if authoritative state was saved; reload reads the authoritative revision.
 
 All mutations are serialized. A running move blocks plan mutations. Each batch edit supplies its expected revision, so a stale browser cannot overwrite newer data. Autosave queues edits made during an earlier save and uses the returned revision.
+
+Client undo snapshots share immutable imported evidence and review history. Only the editable batch contract is cloned for a new decision; UI callbacks receive editable clip fields rather than the full stored record. Failed writes or flushes clean up their temporary output while preserving the previous saved file. Draft folder lists have the same capacity as imported handoffs; request-size and per-path limits still apply.
 
 ## Review folders and follow-up updates
 
@@ -38,9 +43,9 @@ File identity is volume, file ID, size, and modification time. Sources and desti
 
 ## Marker reviews and publication
 
-The version 1 handoff accepts an optional separately versioned markerProposals extension. Original marker records support stable per-clip IDs and optional embedded chapterIndex bindings. Legacy markers receive positional marker-N identities. Shared marker helpers validate identity, original label/time, and decisions. Pending/accepted/rejected decisions participate in autosave and undo; originals stay immutable. Held follow-ups preserve unmentioned decisions and conflict on decisions changed since export. New-batch inventories optionally probe chapters with three workers, a scheduling budget and explicit per-file status.
+The version 1 handoff accepts an optional separately versioned markerProposals extension. Original marker records support stable per-clip IDs and optional embedded chapterIndex bindings. Legacy markers receive positional marker-N identities. Shared marker helpers validate identity, original label/time, and decisions. Missing/pending decisions mean Needs review; accepted/rejected mean Reviewed; deleted decisions are retained as tombstones. All participate in autosave and undo; originals stay immutable. Optional localMarkers hold user additions (with an explicit writeToFile choice) and discovered chapters first edited in Preview. Active exports/timelines exclude tombstones; marker export version 2 carries deletedMarkers separately. Draft exports include explicit empty localMarkers and markerDecisions arrays so undo can clear first-time decisions as well as additions. Held follow-ups include local evidence, preserve unmentioned decisions and conflict on marker changes since export. New-batch inventories optionally probe chapters with three workers, a scheduling budget and explicit per-file status.
 
-markerWriter.ts checks actual source chapters and available disk space. It copies all streams and chapter metadata, overriding only accepted title tags, into a new container. It verifies chapter times/labels, stream properties and copied non-data packet hashes, then flushes the output. The service journals backupPath, preparedPath and preparedBaseline before moving the original to the retained backup and publishing the prepared file with no replacement. Marker-only updates use the same journal even when from equals to. Success updates clip/catalog baselines to the prepared identity; the journal retains the original baseline for recovery.
+markerWriter.ts checks actual source chapters and available disk space. It builds a chapter table from accepted renames/additions and confirmed deletions, preserving surviving start times and adjusting ends to the next marker. A temporary escaped FFmetadata input replaces the chapter table during stream copy; stale QuickTime chapter text streams are excluded. Some FFmpeg builds force the first QuickTime chapter to zero: mp4Chapters.ts then disables only chapter references/tracks in the prepared output, retaining its accurate Nero chapter table without changing media offsets. Atom bounds and metadata size are validated; missing tables and Nero capacity limits fail safely. The writer verifies chapter times/labels, stream properties and copied non-data packet hashes, then flushes the output. The service journals backupPath, preparedPath and preparedBaseline before moving the original to the retained backup and publishing the prepared file with no replacement. Marker-only updates use the same journal even when from equals to. Success updates clip/catalog baselines to the prepared identity; the journal retains the original baseline for recovery.
 
 Recovery recognizes a published prepared identity plus original backup. If preparation failed and the source still matches, it permits a fresh review. Missing original plus retained backup and unpublished output is ambiguous: an explicit restore-marker-original request can restore the original only to an empty original path, under the serial mutation lock. Initialization never automatically moves these files. Backups/staging are under hidden footage-root folders and remain outside plan cleanup.
 
@@ -63,6 +68,10 @@ Project removal is serialized with other mutations and blocked during moves. `re
 The capability also scopes `/api/media/:ticket/info`. `mediaInfo.ts` invokes optional ffprobe with argument-array paths, a hidden console, a ten-second timeout, and a bounded output buffer. It reads chapters and stream configuration without changing media; unavailable probes return a nonfatal note. Metadata is cached for that ticket and its file identity is rechecked before and after probing. Playback URL creation does not wait for the probe. `ClipPreview` merges embedded chapters with imported markers, uses the actual browser-reported duration for seeking, and leaves native video decoding/controls intact. AV1/H.264 MP4 codec configuration enables an optional MediaCapabilities estimate; it does not identify or force the active decoder. `clipScroll.ts` positions an explicitly opened panel above the sticky review actions and respects reduced motion.
 
 ## Local operation
+
+`useShuttlePlayback.ts` attaches J/K/L only to a ready, mounted Preview. It excludes editable controls, dialogs, modified keys and key repeats. Forward speeds use native playbackRate; reverse uses animation-frame scheduling with throttled, non-overlapping seeks and boundary checks. Native player events synchronize the speed display. Closing/replacing the preview removes listeners, cancels seeking, pauses and restores normal speed; late play-promise failures cannot override a newer command. Hidden tabs stop reverse scrubbing.
+
+`HandoffImportArea.tsx` shares the next-batch file-selection and drop path through `useHandoffImport`. Drops respect the same project/folder/busy gating as the button, reject multiple files, and never navigate the browser to the dropped file. The import hook has an immediate in-flight guard so repeated drops cannot race React's busy-state update.
 
 Express binds to loopback and serves both React and the API. Host/origin checks and a session token protect mutations from unrelated web pages. Clients identify projects, batches, revisions, and clips; they do not submit shell commands.
 

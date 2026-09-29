@@ -17,14 +17,15 @@ export async function atomicWrite(file: string, value: unknown, raw = false) {
   const temp = `${file}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx');
   try {
-    await handle.writeFile(raw ? String(value) : JSON.stringify(value, null, 2) + '\n', 'utf8');
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    try {
+      await handle.writeFile(raw ? String(value) : JSON.stringify(value, null, 2) + '\n', 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await rename(temp, file);
   } catch (e) {
+    // A failed write or flush must not accumulate partial checkpoints on a full disk.
     await unlink(temp).catch(() => undefined);
     throw e;
   }

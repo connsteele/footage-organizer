@@ -14,6 +14,12 @@ vi.mock('../src/client/api', () => ({
 }));
 beforeEach(() => {
   vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  });
 });
 afterEach(() => {
   cleanup();
@@ -21,7 +27,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it('resets a suggestion without erasing the user note or releasing a user-held clip', async () => {
+function renderReview() {
   const original = {
     id: 1,
     source: { relativePath: 'Incoming/Clip.mp4' },
@@ -92,6 +98,11 @@ it('resets a suggestion without erasing the user note or releasing a user-held c
     { initialEntries: ['/projects/test/batches/batch'] },
   );
   render(<RouterProvider router={router} />);
+  return { state, original };
+}
+
+it('resets a suggestion without erasing the user note or releasing a user-held clip', async () => {
+  const { state, original } = renderReview();
   const user = userEvent.setup();
   await user.click(await screen.findByRole('button', { name: 'Details for clip 001' }));
   await user.click(screen.getByRole('button', { name: 'Reset suggestion' }));
@@ -112,4 +123,27 @@ it('resets a suggestion without erasing the user note or releasing a user-held c
     held: true,
     note: 'Check this with the agent before filing.',
   });
+});
+
+it('keeps invalid folders out of the draft and lets the user correct the open form', async () => {
+  const { state } = renderReview();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Folder' }));
+  const field = screen.getByRole('textbox', { name: 'Folder path' });
+  for (const name of ['CON', 'Parent/Bad.', 'Parent//Child', 'A'.repeat(256)]) {
+    await user.clear(field);
+    await user.paste(name);
+    await user.click(screen.getByRole('button', { name: 'Add folder' }));
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('All changes saved')).toBeTruthy();
+    expect(state.batches[0].folders).toEqual(['Story', 'Gameplay']);
+  }
+  await user.clear(field);
+  await user.paste('Reviewed/Nested');
+  await user.click(screen.getByRole('button', { name: 'Add folder' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await waitFor(() => expect(state.batches[0].revision).toBe(2), { timeout: 2500 });
+  const edit = mockApi.mock.calls.find(([, options]) => options?.method === 'PUT')![1].body;
+  expect(edit.folders).toContain('Reviewed/Nested');
 });

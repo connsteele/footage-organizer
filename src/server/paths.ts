@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { lstat, realpath, stat, readdir, mkdir } from 'node:fs/promises';
 import type { Baseline } from '../shared/model.js';
+import { filenameProblem } from '../shared/filenames.js';
+export { filenameProblem } from '../shared/filenames.js';
 
 export class AppError extends Error {
   constructor(
@@ -14,16 +16,6 @@ export const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 export function errorCode(error: unknown) {
   return (error as NodeJS.ErrnoException)?.code;
-}
-export function filenameProblem(name: string): string | null {
-  if (!name || name === '.' || name === '..') return 'Enter a filename.';
-  if (/[<>:"/\\|?*]/.test(name) || [...name].some((c) => c.charCodeAt(0) < 32))
-    return 'Names cannot contain path separators or Windows reserved characters.';
-  if (/[. ]$/.test(name)) return 'Names cannot end in a dot or space.';
-  if (/^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(name))
-    return 'This is a reserved Windows name.';
-  if (name.length > 255) return 'A name must be at most 255 characters.';
-  return null;
 }
 export function relativePath(value: string, allowEmpty = false) {
   const normalized = value.replaceAll('\\', '/');

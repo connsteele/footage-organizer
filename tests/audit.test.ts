@@ -63,6 +63,25 @@ afterEach(async () => {
 });
 
 describe('audit: saved records and Windows paths', () => {
+  it('can edit a valid handoff with more than 1,000 destination folders', async () => {
+    const f = await fixture();
+    const folders = Array.from({ length: 1001 }, (_, i) => `Destination ${i + 1}`);
+    const batch = await f.service.importHandoff('test', {
+      ...f.handoff,
+      batchId: 'many-folders',
+      handoffId: 'many-folders',
+      folders,
+    });
+    const edit = editOf(batch);
+    edit.clips[0].note = 'Saved after a large import';
+    edit.clips[0].proposed.folder = folders.at(-1)!;
+    await f.service.saveBatch('test', batch.id, edit);
+    const saved = (await f.store.load('test')).batches.find((b) => b.id === batch.id)!;
+    expect(saved.folders).toEqual(batch.folders);
+    expect(saved.clips[0].note).toBe('Saved after a large import');
+    expect(saved.clips[0].proposed.folder).toBe('Destination 1001');
+    expect(await exists(path.join(f.mediaRoot, 'Clip.mp4'))).toBe(true);
+  });
   it.each(['CON', 'NUL', 'aux', 'COM1', 'lpt9'])(
     'rejects reserved record ID %s before touching saved files',
     async (id) => {

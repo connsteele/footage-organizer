@@ -1,16 +1,20 @@
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { open, statfs } from 'node:fs/promises';
+import { open, statfs, writeFile, unlink } from 'node:fs/promises';
 import { z } from 'zod';
 import type { MarkerChange } from '../shared/model.js';
 import { AppError } from './paths.js';
+import { useNeroChapters } from './mp4Chapters.js';
 
 const run = promisify(execFile);
 const metadataSchema = z.object({
+  format: z.object({ duration: z.string().optional() }).optional(),
   streams: z.array(
     z.object({
       codec_type: z.string(),
+      index: z.number().optional(),
+      codec_tag_string: z.string().optional(),
       codec_name: z.string().optional(),
       width: z.number().optional(),
       height: z.number().optional(),
@@ -40,7 +44,7 @@ export class MarkerWriter {
   private async metadata(file: string) {
     const { stdout } = await run(
       this.ffprobe,
-      ['-v', 'error', '-show_streams', '-show_chapters', '-of', 'json', '-i', file],
+      ['-v', 'error', '-show_streams', '-show_chapters', '-show_format', '-of', 'json', '-i', file],
       { windowsHide: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 },
     );
     return metadataSchema.parse(JSON.parse(stdout));
@@ -54,13 +58,25 @@ export class MarkerWriter {
       () => {
         this.available = undefined;
         throw new AppError(
-          'FFmpeg is required to write accepted marker names. Configure ffmpegPath or FFMPEG_PATH.',
+          'FFmpeg is required to write marker changes. Configure ffmpegPath or FFMPEG_PATH.',
         );
       },
     );
     await this.available;
     const original = await this.metadata(file);
+    const changedChapters = new Set<number>();
     for (const change of changes) {
+      if (change.action === 'add') {
+        const duration = Number(original.format?.duration);
+        if (!Number.isFinite(duration) || change.seconds >= duration || !change.label.trim())
+          throw new AppError(
+            'New markers must have a name and a time before the actual end of the clip.',
+          );
+        continue;
+      }
+      if (change.chapterIndex === undefined || changedChapters.has(change.chapterIndex))
+        throw new AppError('Each marker change must identify a unique embedded chapter.');
+      changedChapters.add(change.chapterIndex);
       const chapter = original.chapters[change.chapterIndex];
       if (
         !chapter ||
@@ -72,12 +88,46 @@ export class MarkerWriter {
           `Marker ${change.markerId} no longer matches the embedded chapter. Request a fresh marker inventory.`,
         );
     }
+    this.chapters(original, changes);
     const space = await statfs(path.dirname(file));
     if (space.bavail * space.bsize < size + 64 * 1024 * 1024)
       throw new AppError(
         'Not enough free space to prepare the marker update while retaining the original footage.',
       );
     return original;
+  }
+  private chapters(original: z.infer<typeof metadataSchema>, changes: MarkerChange[]) {
+    const byIndex = new Map(
+      changes.filter((c) => c.action !== 'add').map((c) => [c.chapterIndex, c]),
+    );
+    const chapters = original.chapters.flatMap((chapter, index) => {
+      const change = byIndex.get(index);
+      return change?.action === 'delete'
+        ? []
+        : [
+            {
+              start: Number(chapter.start_time),
+              end: Number(chapter.end_time),
+              tags: { ...chapter.tags, title: change?.label ?? chapter.tags.title ?? '' },
+            },
+          ];
+    });
+    for (const change of changes.filter((c) => c.action === 'add')) {
+      if (chapters.some((c) => Math.abs(c.start - change.seconds) < 0.001))
+        throw new AppError(
+          'A chapter already exists at the new marker time. Choose a different time.',
+        );
+      chapters.push({
+        start: change.seconds,
+        end: Number(original.format?.duration),
+        tags: { title: change.label },
+      });
+    }
+    chapters.sort((a, b) => a.start - b.start);
+    return chapters.map((chapter, index) => ({
+      ...chapter,
+      end: chapters[index + 1]?.start ?? chapter.end,
+    }));
   }
   private async streamHashes(file: string) {
     // Copied packet payloads, not decoded/re-encoded frames. Chapter data changes intentionally.
@@ -106,40 +156,86 @@ export class MarkerWriter {
   }
   async prepare(source: string, output: string, changes: MarkerChange[], size: number) {
     const original = await this.check(source, changes, size);
+    const chapters = this.chapters(original, changes);
+    const metadataFile = `${output}.ffmeta`;
+    const escape = (value: string) =>
+      value.replace(/\\/g, '\\\\').replace(/[=;#\n\r]/g, (char) => `\\${char}`);
+    const metadata = [
+      ';FFMETADATA1',
+      ...chapters.flatMap((c) => [
+        '[CHAPTER]',
+        'TIMEBASE=1/1000000',
+        `START=${Math.round(c.start * 1e6)}`,
+        `END=${Math.round(c.end * 1e6)}`,
+        ...Object.entries(c.tags).map(([key, value]) => `${escape(key)}=${escape(value)}`),
+      ]),
+      '',
+    ].join('\n');
     const args = [
       '-v',
       'error',
       '-nostdin',
       '-i',
       source,
+      '-f',
+      'ffmetadata',
+      '-i',
+      metadataFile,
       '-map',
       '0',
       '-map_metadata',
       '0',
       '-map_chapters',
-      '0',
+      '1',
       '-c',
       'copy',
     ];
-    for (const change of changes)
-      args.push(`-metadata:c:${change.chapterIndex}`, `title=${change.label}`);
+    // Replace QuickTime's chapter text track rather than copying stale chapter data.
+    // Other data streams remain mapped; audio/video/subtitle packets are verified below.
+    for (const stream of original.streams)
+      if (
+        original.chapters.length &&
+        stream.codec_type === 'data' &&
+        stream.codec_tag_string === 'text' &&
+        stream.index !== undefined
+      )
+        args.push('-map', `-0:${stream.index}`);
     if (path.extname(output).toLowerCase() !== '.mkv') args.push('-movflags', '+faststart');
     args.push('-n', output);
-    await run(this.ffmpeg, args, { windowsHide: true, timeout: 1800000, maxBuffer: 1024 * 1024 });
-    const result = await this.metadata(output);
+    await writeFile(metadataFile, metadata, { flag: 'wx' });
+    try {
+      await run(this.ffmpeg, args, { windowsHide: true, timeout: 1800000, maxBuffer: 1024 * 1024 });
+    } finally {
+      await unlink(metadataFile);
+    }
+    let result = await this.metadata(output);
+    if (
+      path.extname(output).toLowerCase() !== '.mkv' &&
+      chapters[0]?.start > 0 &&
+      Number(result.chapters[0]?.start_time) === 0
+    ) {
+      if (
+        chapters.length > 255 ||
+        chapters.some((c) => Buffer.byteLength(c.tags.title, 'utf8') > 255)
+      )
+        throw new AppError(
+          'A first MP4 chapter after time zero supports up to 255 chapters with names up to 255 UTF-8 bytes. Shorten names, use fewer chapters, or keep additions export-only. The original is preserved.',
+        );
+      await useNeroChapters(output);
+      result = await this.metadata(output);
+    }
     const sameTime = (a: string, b: string) =>
       Number.isFinite(Number(a)) &&
       Number.isFinite(Number(b)) &&
       Math.abs(Number(a) - Number(b)) <= 0.001;
     if (
-      result.chapters.length !== original.chapters.length ||
-      original.chapters.some((chapter, index) => {
-        const next = result.chapters[index],
-          change = changes.find((c) => c.chapterIndex === index);
+      result.chapters.length !== chapters.length ||
+      chapters.some((chapter, index) => {
+        const next = result.chapters[index];
         return (
-          !sameTime(chapter.start_time, next.start_time) ||
-          !sameTime(chapter.end_time, next.end_time) ||
-          (next.tags.title ?? '') !== (change?.label ?? chapter.tags.title ?? '')
+          !sameTime(String(chapter.start), next.start_time) ||
+          !sameTime(String(chapter.end), next.end_time) ||
+          (next.tags.title ?? '') !== chapter.tags.title
         );
       })
     )

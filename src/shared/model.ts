@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { markerChanges } from './markers.js';
 
 export const safeId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
 // These IDs become filenames; Windows device names are invalid even with .json appended.
@@ -39,12 +40,31 @@ export const markerDecisionSchema = z
   .object({
     markerId: safeId,
     label: z.string().max(4000),
-    status: z.enum(['pending', 'accepted', 'rejected']),
+    status: z.enum(['pending', 'accepted', 'rejected', 'deleted']),
   })
   .strict();
 export type SourceMarker = z.infer<typeof markerSchema>;
 export type MarkerProposals = z.infer<typeof markerProposalsSchema>;
 export type MarkerDecision = z.infer<typeof markerDecisionSchema>;
+// Local additions and chapters first discovered in Preview stay separate from imported evidence.
+export const localMarkerSchema = z.discriminatedUnion('origin', [
+  markerSchema
+    .extend({
+      id: safeId,
+      origin: z.literal('added'),
+      writeToFile: z.boolean(),
+      chapterIndex: z.never().optional(),
+    })
+    .strict(),
+  markerSchema
+    .extend({
+      id: safeId,
+      origin: z.literal('discovered'),
+      chapterIndex: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+export type LocalMarker = z.infer<typeof localMarkerSchema>;
 export const handoffClipSchema = z.object({
   id: z.number().int().positive(),
   source: z.object({
@@ -129,6 +149,7 @@ export const batchClipSchema = z.object({
   applied: z.boolean(),
   agentReview: agentReviewSchema.optional(),
   markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
+  localMarkers: z.array(localMarkerSchema).max(10000).optional(),
 });
 export type BatchClip = z.infer<typeof batchClipSchema>;
 export const reviewUpdateSchema = z
@@ -190,7 +211,8 @@ export type Batch = z.infer<typeof batchSchema>;
 export const editSchema = z.object({
   revision: z.number().int().nonnegative(),
   notes: z.string().max(64000),
-  folders: z.array(z.string().max(1500)).max(1000),
+  // Match handoff imports: a valid imported folder list must remain editable.
+  folders: z.array(z.string().max(1500)),
   clips: z
     .array(
       z.object({
@@ -199,17 +221,21 @@ export const editSchema = z.object({
         note: z.string().max(16000),
         held: z.boolean(),
         markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
+        localMarkers: z.array(localMarkerSchema).max(10000).optional(),
       }),
     )
     .max(10000),
 });
 export type BatchEdit = z.infer<typeof editSchema>;
+export type ClipEdit = BatchEdit['clips'][number];
 export const markerChangeSchema = z.object({
   markerId: safeId,
-  chapterIndex: z.number().int().nonnegative(),
+  chapterIndex: z.number().int().nonnegative().optional(),
   seconds: z.number().nonnegative(),
   originalLabel: z.string(),
   label: z.string(),
+  // Absent on older saved rename operations.
+  action: z.enum(['rename', 'delete', 'add']).optional(),
 });
 export type MarkerChange = z.infer<typeof markerChangeSchema>;
 export const operationItemSchema = z.object({
@@ -310,17 +336,7 @@ export function isPending(clip: BatchClip) {
   return (
     !clip.held &&
     !clip.applied &&
-    (clip.currentPath !== targetPath(clip) ||
-      clip.original.markers.some(
-        (m, i) =>
-          m.chapterIndex !== undefined &&
-          clip.markerDecisions?.some(
-            (d) =>
-              d.markerId === (m.id ?? `marker-${i + 1}`) &&
-              d.status === 'accepted' &&
-              d.label !== m.label,
-          ),
-      ))
+    (clip.currentPath !== targetPath(clip) || markerChanges(clip).length > 0)
   );
 }
 export function editOf(batch: Batch): BatchEdit {
@@ -328,12 +344,13 @@ export function editOf(batch: Batch): BatchEdit {
     revision: batch.revision,
     notes: batch.notes,
     folders: batch.folders,
-    clips: batch.clips.map(({ id, proposed, note, held, markerDecisions }) => ({
+    clips: batch.clips.map(({ id, proposed, note, held, markerDecisions, localMarkers }) => ({
       id,
       proposed,
       note,
       held,
-      ...(markerDecisions ? { markerDecisions } : {}),
+      markerDecisions: markerDecisions ?? [],
+      localMarkers: localMarkers ?? [],
     })),
   };
 }

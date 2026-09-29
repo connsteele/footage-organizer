@@ -5,8 +5,6 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -20,10 +18,7 @@ import {
   Folder,
   GripVertical,
   LoaderCircle,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
   Search,
   Undo2,
   Redo2,
@@ -36,7 +31,7 @@ import {
   isPending,
   targetPath,
   type Batch,
-  type BatchClip,
+  type ClipEdit,
   type MoveReview,
   type Operation,
   type ProjectState,
@@ -45,12 +40,12 @@ import { batchMarkdown } from '../shared/markdown';
 import { api, download, errorText } from './api';
 import { useDraft } from './useDraft';
 import { Modal } from './Modal';
-import { FilenameInput } from './FilenameInput';
 import { HeldReviewTools } from './HeldReviewTools';
-import { ClipPreview } from './ClipPreview';
-import { MarkerReview } from './MarkerReview';
-import { markerExport } from '../shared/markers';
-import { centerExpandedClip } from './clipScroll';
+import { markerExport, sourceMarkers, needsMarkerReview } from '../shared/markers';
+import { groupClipsByFolder } from '../shared/clipGroups';
+import { folderProblem } from '../shared/filenames';
+import { ClipRow } from './ClipRow';
+import { FolderGroup } from './FolderGroup';
 import styles from './App.module.css';
 
 export function Review({ refreshProjects }: { refreshProjects: () => Promise<void> }) {
@@ -141,6 +136,7 @@ function ReviewSession({
   const [checking, setChecking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [folder, setFolder] = useState('');
+  const [folderError, setFolderError] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [active, setActive] = useState<number | null>(null);
   const [previewClip, setPreviewClip] = useState<number | null>(null);
@@ -208,6 +204,8 @@ function ReviewSession({
       ].some((v) => v.toLowerCase().includes(search.toLowerCase())),
   );
   const totalSeconds = batch.clips.reduce((n, c) => n + (c.original.duration || 0), 0);
+  const filteredGroups = groupClipsByFolder(filtered);
+  const occupiedFolders = new Set(batch.clips.map((c) => c.proposed.folder));
   async function startNextBatch() {
     try {
       await flush();
@@ -216,7 +214,7 @@ function ReviewSession({
       setError(errorText(e));
     }
   }
-  function editClip(id: number, update: (clip: BatchClip) => void) {
+  function editClip(id: number, update: (clip: ClipEdit) => void) {
     change((draft) => {
       const clip = draft.clips.find((c) => c.id === id)!;
       update(clip);
@@ -381,6 +379,7 @@ function ReviewSession({
             Your decisions
             <textarea
               rows={6}
+              maxLength={64000}
               value={batch.notes}
               disabled={locked}
               onChange={(e) =>
@@ -447,7 +446,10 @@ function ReviewSession({
           <button
             className={styles.secondary}
             disabled={locked || clipView === 'filed'}
-            onClick={() => setAdding(true)}
+            onClick={() => {
+              setFolderError('');
+              setAdding(true);
+            }}
           >
             <Plus size={16} /> Folder
           </button>
@@ -483,11 +485,11 @@ function ReviewSession({
       >
         <div className={styles.folderList}>
           {folders.map((folderName) => {
-            const clips = filtered.filter((c) => c.proposed.folder === folderName);
+            const clips = filteredGroups.get(folderName) ?? [];
             const emptyDestination =
               !search &&
               (clipView === 'all' || (clipView === 'remaining' && remaining > 0)) &&
-              !batch.clips.some((c) => c.proposed.folder === folderName);
+              !occupiedFolders.has(folderName);
             if (!clips.length && active === null && !emptyDestination) return null;
             return (
               <FolderGroup
@@ -500,6 +502,7 @@ function ReviewSession({
                     ? undefined
                     : () => {
                         setRenaming(folderName);
+                        setFolderError('');
                         setFolder(folderName);
                         setAdding(true);
                       }
@@ -672,7 +675,7 @@ function ReviewSession({
           </span>
         </div>
         <div className={styles.inlineActions}>
-          {batch.clips.some((c) => c.original.markers.length) && (
+          {batch.clips.some((c) => sourceMarkers(c).length) && (
             <button
               className={styles.textButton}
               disabled={locked}
@@ -681,13 +684,13 @@ function ReviewSession({
                   await flush();
                   const saved = await api<ProjectState>(`/projects/${project.id}`);
                   download(`${batch.id}-markers.json`, {
-                    schemaVersion: 1,
+                    schemaVersion: 2,
                     kind: 'batch-marker-review',
                     projectId: project.id,
                     batchId: batch.id,
                     clips: saved.batches
                       .find((b) => b.id === batch.id)!
-                      .clips.filter((c) => c.original.markers.length)
+                      .clips.filter((c) => sourceMarkers(c).length)
                       .map(markerExport),
                   });
                 } catch (e) {
@@ -755,16 +758,19 @@ function ReviewSession({
             onSubmit={(e) => {
               e.preventDefault();
               const name = folder.trim().replaceAll('\\', '/');
-              if (
-                !name ||
-                name.split('/').some((p) => !p || p === '.' || p === '..' || /[<>:"|?*]/.test(p))
-              )
+              const problem = folderProblem(name);
+              if (problem) {
+                setFolderError(problem);
                 return;
+              }
+              const filedIds = new Set(
+                batch.clips.filter((clip) => clip.applied).map((clip) => clip.id),
+              );
               change((b) => {
                 if (renaming !== null) {
                   b.folders = b.folders.filter((f) => f !== renaming);
                   for (const clip of b.clips)
-                    if (!clip.applied && clip.proposed.folder === renaming)
+                    if (!filedIds.has(clip.id) && clip.proposed.folder === renaming)
                       clip.proposed.folder = name;
                 }
                 if (!b.folders.includes(name)) b.folders.push(name);
@@ -780,10 +786,19 @@ function ReviewSession({
                 required
                 autoFocus
                 placeholder="Narrative/Act 1/Cai"
+                maxLength={1500}
                 value={folder}
-                onChange={(e) => setFolder(e.target.value)}
+                onChange={(e) => {
+                  setFolder(e.target.value);
+                  setFolderError('');
+                }}
               />
             </label>
+            {folderError && (
+              <p className={styles.error} role="alert">
+                {folderError}
+              </p>
+            )}
             <button className={styles.primary}>
               {renaming !== null ? 'Update placements' : 'Add folder'}
               <Plus size={16} />
@@ -800,7 +815,7 @@ function ReviewSession({
           }}
         >
           <p>
-            {review.items.length} clips will be moved, renamed, or have accepted marker names
+            {review.items.length} clips will be moved, renamed, or have reviewed marker changes
             written. {review.held} held · {review.unchanged} unchanged. This includes pending clips
             hidden by search or status filters.
           </p>
@@ -836,16 +851,24 @@ function ReviewSession({
                   </p>
                   {item.markerChanges?.map((m) => (
                     <p key={m.markerId}>
-                      Marker at {durationLabel(m.seconds)}: {m.originalLabel || '(unnamed)'} →{' '}
-                      {m.label}
+                      {m.action === 'delete'
+                        ? 'Delete marker'
+                        : m.action === 'add'
+                          ? 'Add marker'
+                          : 'Rename marker'}{' '}
+                      at {durationLabel(m.seconds)}:{' '}
+                      {m.action === 'add'
+                        ? m.label
+                        : m.action === 'delete'
+                          ? m.originalLabel || '(unnamed)'
+                          : `${m.originalLabel || '(unnamed)'} → ${m.label}`}
                     </p>
                   ))}
-                  {batch.clips
-                    .find((c) => c.id === item.clipId)
-                    ?.markerDecisions?.some((d) => d.status === 'pending') && (
+                  {!!needsMarkerReview(batch.clips.find((c) => c.id === item.clipId)!) && (
                     <p className={styles.conflict}>
-                      Unreviewed marker suggestions will keep their original names. Go back to
-                      Details to review them before filing; filed decisions are locked.
+                      Unreviewed existing markers keep their original names; unreviewed additions
+                      are not written. Go back to Details to review them before filing; filed
+                      decisions are locked.
                     </p>
                   )}
                 </div>
@@ -976,313 +999,4 @@ function DraftNavigationGuard({
     };
   }, [blocker, flush]);
   return null;
-}
-
-function FolderGroup({
-  name,
-  count,
-  isNew,
-  children,
-  onRename,
-}: {
-  name: string;
-  count: number;
-  isNew: boolean;
-  children: React.ReactNode;
-  onRename?: () => void;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: name });
-  return (
-    <section
-      ref={setNodeRef}
-      className={`${styles.folderGroup} ${isOver ? styles.dropActive : ''}`}
-    >
-      <div className={styles.folderHeading}>
-        <Folder size={19} />
-        <h2>{name || 'Media root'}</h2>
-        {isNew && <span className={styles.newBadge}>NEW FOLDER</span>}
-        <span className={styles.folderCount}>
-          {count} {count === 1 ? 'clip' : 'clips'}
-        </span>
-        {onRename && (
-          <button
-            className={styles.detailsButton}
-            onClick={onRename}
-            aria-label={`Change proposed folder ${name || 'Media root'}`}
-          >
-            Edit folder
-          </button>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-function ClipRow({
-  clip,
-  choices,
-  locked,
-  onChange,
-  onPlay,
-  prefix,
-  previewOpen,
-  onPreview,
-}: {
-  clip: BatchClip;
-  choices: string[];
-  locked: boolean;
-  onChange: (update: (clip: BatchClip) => void) => void;
-  onPlay: () => void;
-  prefix: string;
-  previewOpen: boolean;
-  onPreview: () => void;
-}) {
-  const [details, setDetails] = useState(false);
-  const row = useRef<HTMLElement>(null);
-  const focusPanel = useRef<'preview' | 'details' | null>(null);
-  useEffect(() => {
-    const requested = focusPanel.current;
-    if (!requested || !(requested === 'preview' ? previewOpen : details)) return;
-    focusPanel.current = null;
-    const frame = requestAnimationFrame(() => {
-      const panel = row.current?.querySelector<HTMLElement>(`[data-clip-panel="${requested}"]`);
-      if (row.current && panel) centerExpandedClip(row.current, panel);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [previewOpen, details]);
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: clip.id,
-    disabled: locked || clip.applied,
-  });
-  const currentName = clip.currentPath.split('/').at(-1) ?? clip.currentPath;
-  const originalName = clip.original.source.relativePath.split('/').at(-1)!;
-  const questions = clip.agentReview?.questions ?? clip.original.questions;
-  const renamed = currentName !== clip.proposed.filename;
-  const movedFolder = clip.currentPath.split('/').slice(0, -1).join('/') !== clip.proposed.folder;
-  const status = clip.applied
-    ? 'Filed'
-    : clip.held
-      ? 'Held'
-      : renamed
-        ? movedFolder
-          ? 'Rename + move'
-          : 'Rename'
-        : clip.currentPath === targetPath(clip)
-          ? 'Unchanged'
-          : 'Move';
-  return (
-    <article
-      ref={(node) => {
-        row.current = node;
-        setNodeRef(node);
-      }}
-      className={`${styles.clipRow} ${clip.held ? styles.heldRow : ''} ${isDragging ? styles.dragging : ''}`}
-    >
-      <div className={styles.clipMain}>
-        <button
-          {...attributes}
-          {...listeners}
-          disabled={locked || clip.applied}
-          className={styles.dragHandle}
-          aria-label={`Drag clip ${clipLabel(clip.id)}`}
-        >
-          <GripVertical size={18} />
-        </button>
-        <span className={styles.clipId}>{clipLabel(clip.id)}</span>
-        <div className={styles.clipName}>
-          <span className={styles.filenameLabel}>New:</span>
-          <div className={styles.proposedFilename}>
-            <FilenameInput
-              label={`Filename for clip ${clipLabel(clip.id)}`}
-              value={clip.proposed.filename}
-              disabled={locked || clip.applied}
-              onChange={(filename) =>
-                onChange((c) => {
-                  c.proposed.filename = filename;
-                })
-              }
-            />
-            <button
-              type="button"
-              className={styles.restoreFilename}
-              aria-label={`Use original filename for clip ${clipLabel(clip.id)}`}
-              title={
-                clip.proposed.filename !== originalName
-                  ? 'Use the original filename'
-                  : 'Already using the original filename'
-              }
-              disabled={locked || clip.applied || clip.proposed.filename === originalName}
-              onClick={() =>
-                onChange((c) => {
-                  c.proposed.filename = originalName;
-                })
-              }
-            >
-              <RotateCcw size={16} />
-            </button>
-          </div>
-          <span className={styles.originalFilenameLabel}>Original:</span>
-          <span className={styles.originalFilename} title={clip.original.source.relativePath}>
-            {originalName}
-          </span>
-        </div>
-        <span className={styles.duration}>{durationLabel(clip.original.duration)}</span>
-        <span
-          className={`${styles.statusPill} ${clip.held ? styles.heldPill : clip.applied ? styles.filedPill : ''}`}
-        >
-          {status}
-        </span>
-        {!!clip.markerDecisions?.filter((d) => d.status === 'pending').length && (
-          <span className={styles.statusPill}>
-            {clip.markerDecisions.filter((d) => d.status === 'pending').length} markers to review
-          </span>
-        )}
-        <button
-          aria-label={`Open clip ${clipLabel(clip.id)} in player`}
-          className={styles.iconButton}
-          disabled={locked}
-          title="Open in external player"
-          onClick={onPlay}
-        >
-          <Play size={16} />
-        </button>
-        <button
-          className={styles.detailsButton}
-          disabled={locked}
-          aria-expanded={previewOpen}
-          aria-label={`Preview clip ${clipLabel(clip.id)}`}
-          onClick={() => {
-            focusPanel.current = previewOpen ? null : 'preview';
-            onPreview();
-          }}
-        >
-          Preview <ChevronDown size={13} />
-        </button>
-        <button
-          className={styles.detailsButton}
-          aria-expanded={details}
-          aria-label={`Details for clip ${clipLabel(clip.id)}`}
-          onClick={() => {
-            focusPanel.current = details ? null : 'details';
-            setDetails(!details);
-          }}
-        >
-          Details
-          <ChevronDown size={13} />
-        </button>
-      </div>
-      {previewOpen && (
-        <div data-clip-panel="preview">
-          <ClipPreview
-            key={`${prefix}-${clip.id}`}
-            prefix={prefix}
-            clipId={clip.id}
-            markers={clip.original.markers}
-            markerDecisions={clip.markerDecisions}
-            review={{ clip, locked, onChange }}
-            onExternal={onPlay}
-          />
-        </div>
-      )}
-      {clip.importIssue && (
-        <p className={styles.rowWarning}>
-          <AlertCircle size={14} />
-          {clip.importIssue}
-        </p>
-      )}
-      {questions.length > 0 && (
-        <p className={styles.rowQuestion}>
-          <AlertCircle size={14} />
-          {questions.join(' · ')}
-        </p>
-      )}
-      {details && (
-        <div className={styles.clipDetails} data-clip-panel="details">
-          {!previewOpen && <MarkerReview clip={clip} locked={locked} onChange={onChange} />}
-          <div>
-            <label>
-              Destination
-              <select
-                aria-label="Destination"
-                value={clip.proposed.folder}
-                disabled={locked || clip.applied}
-                onChange={(e) =>
-                  onChange((c) => {
-                    c.proposed.folder = e.target.value;
-                  })
-                }
-              >
-                {choices.map((f) => (
-                  <option key={f} value={f}>
-                    {f || 'Media root'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p>
-              <b>Current path</b>
-              <br />
-              {clip.currentPath}
-            </p>
-            <p>
-              <b>Original review rationale</b>
-              <br />
-              {clip.original.rationale || 'No additional rationale.'}
-            </p>
-            {clip.agentReview && (
-              <p>
-                <b>Latest agent follow-up</b>
-                <br />
-                {clip.agentReview.rationale || 'No additional rationale.'}
-              </p>
-            )}
-          </div>
-          <div>
-            <label>
-              Your note
-              <textarea
-                aria-label="Your note"
-                rows={3}
-                value={clip.note}
-                disabled={locked}
-                placeholder="Why this placement? Anything to revisit?"
-                onChange={(e) =>
-                  onChange((c) => {
-                    c.note = e.target.value;
-                  })
-                }
-              />
-            </label>
-            <div className={styles.detailActions}>
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={clip.held}
-                  disabled={locked || clip.applied}
-                  onChange={(e) =>
-                    onChange((c) => {
-                      c.held = e.target.checked;
-                    })
-                  }
-                />
-                <Pause size={14} /> Hold for review
-              </label>
-              <button
-                className={styles.textButton}
-                disabled={locked || clip.applied}
-                onClick={() =>
-                  onChange((c) => {
-                    c.proposed = { ...c.original.proposed };
-                  })
-                }
-              >
-                <RotateCcw size={13} />
-                Reset suggestion
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </article>
-  );
 }

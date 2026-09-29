@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, LoaderCircle } from 'lucide-react';
-import { clipLabel, type BatchClip, type MarkerDecision } from '../shared/model';
-import { identifiedMarkers } from '../shared/markers';
+import { clipLabel, type BatchClip, type ClipEdit, type MarkerDecision } from '../shared/model';
+import {
+  effectiveMarkers,
+  identifiedMarkers,
+  markerDecisionsById,
+  sourceMarkers,
+} from '../shared/markers';
 import { markerTime, previewMarkers, type MediaInfo, type PreviewMarker } from '../shared/media';
 import { api, errorText } from './api';
 import { MarkerReview, MarkerSeekButton } from './MarkerReview';
+import { TimelineMarkers } from './TimelineMarkers';
+import { useShuttlePlayback } from './useShuttlePlayback';
 import styles from './App.module.css';
 
 export function ClipPreview({
@@ -22,7 +29,7 @@ export function ClipPreview({
   review?: {
     clip: BatchClip;
     locked: boolean;
-    onChange: (update: (clip: BatchClip) => void) => void;
+    onChange: (update: (clip: ClipEdit) => void) => void;
   };
   onExternal: () => void;
 }) {
@@ -114,30 +121,49 @@ export function ClipPreview({
       cancelled = true;
     };
   }, [info]);
+  const reviewClip = review?.clip;
   const allMarkers = useMemo(() => {
-    const originals = identifiedMarkers(markers);
-    const reviewed = originals.map((m) => {
-      const decision = markerDecisions?.find((d) => d.markerId === m.id && d.status === 'accepted');
-      return { ...m, label: decision?.label ?? m.label };
-    });
-    const embedded = (info?.markers ?? []).map((m) => {
-      const original = originals.find(
-        (o) =>
-          o.chapterIndex !== undefined &&
-          o.chapterIndex === m.chapterIndex &&
-          Math.abs(o.seconds - m.seconds) < 0.001,
-      );
-      return original ? reviewed.find((r) => r.id === original.id)! : m;
+    const originals = reviewClip ? sourceMarkers(reviewClip) : identifiedMarkers(markers);
+    const decisions = markerDecisionsById({ markerDecisions });
+    const reviewed = reviewClip
+      ? effectiveMarkers(reviewClip)
+      : originals
+          .filter((m) => decisions.get(m.id)?.status !== 'deleted')
+          .map((m) => {
+            const decision = decisions.get(m.id);
+            return { ...m, label: decision?.status === 'accepted' ? decision.label : m.label };
+          });
+    const chapters = new Map(
+      originals.filter((m) => m.chapterIndex !== undefined).map((m) => [m.chapterIndex, m]),
+    );
+    const embedded = (info?.markers ?? []).flatMap((m) => {
+      if (reviewClip?.applied) return [m];
+      const original = m.chapterIndex === undefined ? undefined : chapters.get(m.chapterIndex);
+      if (!original || Math.abs(original.seconds - m.seconds) >= 0.001) return [m];
+      const decision = decisions.get(original.id);
+      return decision?.status === 'deleted'
+        ? []
+        : [
+            {
+              ...original,
+              label: decision?.status === 'accepted' ? decision.label : original.label,
+            },
+          ];
     });
     return previewMarkers(reviewed, embedded);
-  }, [markers, markerDecisions, info]);
+  }, [markers, markerDecisions, info, reviewClip]);
+  const getPosition = useCallback(() => video.current?.currentTime ?? 0, []);
   const ready = duration > 0 && !error;
-  function seek(seconds: number) {
-    if (!video.current || !ready) return;
-    const next = Math.max(0, Math.min(duration, seconds));
-    video.current.currentTime = next;
-    setPosition(next);
-  }
+  const shuttle = useShuttlePlayback(video, source, ready);
+  const seek = useCallback(
+    (seconds: number) => {
+      if (!video.current || !ready) return;
+      const next = Math.max(0, Math.min(duration, seconds));
+      video.current.currentTime = next;
+      setPosition(next);
+    },
+    [duration, ready],
+  );
   function loaded() {
     const value = video.current?.duration || 0;
     setDuration(Number.isFinite(value) && value > 0 ? value : 0);
@@ -174,6 +200,21 @@ export function ClipPreview({
               />
             )}
           </div>
+          <div className={styles.shuttleStatus}>
+            <span role="status" aria-label="Playback speed">
+              {!shuttle.speed
+                ? 'Paused'
+                : `${shuttle.speed < 0 ? 'Rewind' : 'Forward'} ${Math.abs(shuttle.speed)}×`}
+            </span>
+            <span>
+              <kbd>J</kbd> Rewind · <kbd>K</kbd> Pause · <kbd>L</kbd> Play / faster
+            </span>
+          </div>
+          {shuttle.error && (
+            <p role="alert" className={styles.muted}>
+              {shuttle.error}
+            </p>
+          )}
           <div className={styles.markerTimeline}>
             {markerDecisions?.some((d) => d.status === 'accepted') && (
               <p className={styles.muted}>Timeline shows accepted names from this plan.</p>
@@ -198,20 +239,7 @@ export function ClipPreview({
                 aria-valuetext={markerTime(position)}
                 onChange={(event) => seek(Number(event.target.value))}
               />
-              {ready &&
-                allMarkers
-                  .filter((m) => m.seconds <= duration)
-                  .map((m, index) => (
-                    <button
-                      key={`${m.seconds}-${index}`}
-                      type="button"
-                      className={styles.timelineMarker}
-                      style={{ left: `${(m.seconds / duration) * 100}%` }}
-                      title={`${markerTime(m.seconds)} — ${m.label}`}
-                      aria-label={`Jump to ${markerTime(m.seconds)}: ${m.label}`}
-                      onClick={() => seek(m.seconds)}
-                    />
-                  ))}
+              {ready && <TimelineMarkers markers={allMarkers} duration={duration} onSeek={seek} />}
             </div>
           </div>
           {error && (
@@ -248,6 +276,7 @@ export function ClipPreview({
                   duration={ready ? duration : 0}
                   previewMarkers={allMarkers}
                   showHeading={false}
+                  getPosition={getPosition}
                 />
               ) : (
                 allMarkers.map((marker, index) => (

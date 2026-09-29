@@ -26,6 +26,7 @@ export function FilenameInput({
           aria-label={label}
           aria-describedby={extension ? extensionId : undefined}
           value={name}
+          maxLength={255 - extension.length}
           disabled={disabled}
           onChange={(e) => onChange(`${e.target.value}${extension}`)}
           spellCheck={false}

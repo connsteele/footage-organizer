@@ -65,7 +65,7 @@ export function createApp(
       token,
       platform: process.platform,
       dataDir: service.store.dataDir,
-      features: ['marker-review-v1'],
+      features: ['marker-review-v1', 'marker-editing-v1'],
     }),
   );
   app.get('/api/projects', async (_req, res) => res.json(await service.summaries()));
