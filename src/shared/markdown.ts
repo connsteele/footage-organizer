@@ -40,13 +40,13 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
     lines.push(
       `## ${folder || 'Media root'}`,
       '',
-      '| ID | Current path | Proposed path | Status | Rationale / notes |',
-      '|---|---|---|---|---|',
+      '| ID | Current path | Proposed path | Status | Clip review | Rationale / notes |',
+      '|---|---|---|---|---|---|',
     );
     for (const c of groups.get(folder)!) {
       const status = c.applied ? 'Moved' : c.held ? 'Held' : isPending(c) ? 'Pending' : 'Unchanged';
       lines.push(
-        `| ${clipLabel(c.id)} | ${cell(c.currentPath)} | ${cell(targetPath(c))} | ${status} | ${cell([`Original review: ${c.original.rationale}`, ...(c.agentReview ? [`Latest follow-up: ${c.agentReview.rationale}`, ...c.agentReview.questions] : c.original.questions), c.note && `Your note: ${c.note}`, c.importIssue ?? ''].filter(Boolean).join('\n'))} |`,
+        `| ${clipLabel(c.id)} | ${cell(c.currentPath)} | ${cell(targetPath(c))} | ${status} | ${c.reviewed ? 'Reviewed' : 'Needs review'} | ${cell([`Original review: ${c.original.rationale}`, ...(c.agentReview ? [`Latest follow-up: ${c.agentReview.rationale}`, ...c.agentReview.questions] : c.original.questions), c.note && `Your note: ${c.note}`, c.importIssue ?? ''].filter(Boolean).join('\n'))} |`,
       );
     }
     lines.push('');
@@ -84,7 +84,7 @@ export function batchMarkdown(project: Project, batch: Batch, operations: Operat
       const decision = decisions.get(marker.id);
       const proposal = proposals.get(marker.id);
       lines.push(
-        `| ${marker.seconds} | ${cell(marker.label)} | ${cell(decision?.label ?? proposal?.proposedLabel ?? marker.label)} | ${decision?.status ?? 'needs review'}${marker.origin === 'added' ? ' (added)' : ''}${!writesMarker(marker) ? ' (export only)' : clip.applied && ['accepted', 'deleted'].includes(decision?.status ?? '') ? ' (written)' : ''} | ${cell(proposal?.rationale ?? '')} |`,
+        `| ${marker.seconds} | ${cell(marker.label)} | ${cell(decision?.label ?? proposal?.proposedLabel ?? marker.label)} | ${decision?.status ?? 'unchanged'}${marker.origin === 'added' ? ' (added)' : ''}${!writesMarker(marker) ? ' (export only)' : clip.applied && ['accepted', 'deleted'].includes(decision?.status ?? '') ? ' (written)' : ''} | ${cell(proposal?.rationale ?? '')} |`,
       );
     }
     lines.push('');

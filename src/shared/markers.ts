@@ -21,11 +21,12 @@ export function sourceMarkers(
 ): EditableMarker[] {
   return [...identifiedMarkers(clip.original.markers), ...(clip.localMarkers ?? [])];
 }
-export function needsMarkerReview(clip: MarkerClip) {
+export function pendingMarkerChanges(clip: MarkerClip) {
   const decisions = markerDecisionsById(clip);
-  return sourceMarkers(clip).filter(
-    (m) => !decisions.has(m.id) || decisions.get(m.id)?.status === 'pending',
-  ).length;
+  return sourceMarkers(clip).filter((m) => {
+    const decision = decisions.get(m.id);
+    return decision?.status === 'pending' && (m.origin === 'added' || decision.label !== m.label);
+  }).length;
 }
 export function writesMarker(marker: EditableMarker) {
   return marker.chapterIndex !== undefined || (marker.origin === 'added' && marker.writeToFile);
@@ -109,7 +110,7 @@ export function markerExport(clip: BatchClip) {
           ...m,
           originalLabel: m.label,
           label: decision?.status === 'accepted' ? decision.label : m.label,
-          decision: decision?.status ?? 'pending',
+          decision: decision?.status ?? 'unchanged',
           proposedLabel: decision?.label,
         };
       }),

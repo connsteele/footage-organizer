@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { AlertCircle, ChevronDown, GripVertical, Pause, Play, RotateCcw } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Circle,
+  ChevronDown,
+  GripVertical,
+  Pause,
+  Play,
+  RotateCcw,
+} from 'lucide-react';
 import {
   clipLabel,
   durationLabel,
@@ -8,7 +17,7 @@ import {
   type BatchClip,
   type ClipEdit,
 } from '../shared/model';
-import { markerChanges, needsMarkerReview, sourceMarkers } from '../shared/markers';
+import { markerChanges } from '../shared/markers';
 import { FilenameInput } from './FilenameInput';
 import { ClipPreview } from './ClipPreview';
 import { MarkerReview } from './MarkerReview';
@@ -131,13 +140,23 @@ export function ClipRow({
         >
           {status}
         </span>
-        {!!sourceMarkers(clip).length && (
-          <span className={styles.statusPill}>
-            {needsMarkerReview(clip)
-              ? `${needsMarkerReview(clip)} markers to review`
-              : 'Markers reviewed'}
-          </span>
-        )}
+        <button
+          className={`${styles.clipReviewButton} ${clip.reviewed ? styles.clipReviewed : ''}`}
+          aria-label={`Reviewed clip ${clipLabel(clip.id)}`}
+          aria-pressed={clip.reviewed ?? false}
+          title={
+            clip.reviewed ? 'Mark this clip as needing review' : 'Mark this whole clip reviewed'
+          }
+          disabled={locked}
+          onClick={() =>
+            onChange((c) => {
+              c.reviewed = !clip.reviewed;
+            })
+          }
+        >
+          {clip.reviewed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+          {clip.reviewed ? 'Reviewed' : 'Needs review'}
+        </button>
         <button
           aria-label={`Open clip ${clipLabel(clip.id)} in player`}
           className={styles.iconButton}

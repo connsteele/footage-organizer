@@ -1,21 +1,21 @@
 let sessionToken: string | null = null;
-let markerReviewAvailable = false;
+let clipReviewAvailable = false;
 async function session() {
   const response = await fetch('/api/session');
   if (!response.ok)
     throw new Error('Cannot connect to Footage Organizer. Start the local app and reload.');
   const data = await response.json();
   sessionToken = data.token;
-  markerReviewAvailable = data.features?.includes('marker-editing-v1') ?? false;
+  clipReviewAvailable = data.features?.includes('clip-review-v1') ?? false;
 }
 export async function api<T>(
   url: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   if (!sessionToken) await session();
-  if (!markerReviewAvailable && url !== '/shutdown')
+  if (!clipReviewAvailable && url !== '/shutdown')
     throw new Error(
-      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable marker editing.',
+      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable clip review.',
     );
   const response = await fetch(`/api${url}`, {
     method: options.method || 'GET',

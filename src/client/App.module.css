@@ -1719,12 +1719,41 @@
 .markerToolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
   margin: 8px 0;
   color: var(--muted);
   font-size: var(--text-small);
+}
+.clipReviewButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  white-space: nowrap;
+  font-size: 1rem;
+}
+.clipReviewed {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.reviewFilter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.reviewFilter select {
+  width: auto;
+}
+.reviewProgress {
+  color: var(--muted);
 }
 .deletedMarker {
   display: flex;

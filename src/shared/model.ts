@@ -147,6 +147,7 @@ export const batchClipSchema = z.object({
   note: z.string(),
   held: z.boolean(),
   applied: z.boolean(),
+  reviewed: z.boolean().optional(),
   agentReview: agentReviewSchema.optional(),
   markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
   localMarkers: z.array(localMarkerSchema).max(10000).optional(),
@@ -220,6 +221,7 @@ export const editSchema = z.object({
         proposed: proposalSchema,
         note: z.string().max(16000),
         held: z.boolean(),
+        reviewed: z.boolean().optional(),
         markerDecisions: z.array(markerDecisionSchema).max(10000).optional(),
         localMarkers: z.array(localMarkerSchema).max(10000).optional(),
       }),
@@ -344,14 +346,17 @@ export function editOf(batch: Batch): BatchEdit {
     revision: batch.revision,
     notes: batch.notes,
     folders: batch.folders,
-    clips: batch.clips.map(({ id, proposed, note, held, markerDecisions, localMarkers }) => ({
-      id,
-      proposed,
-      note,
-      held,
-      markerDecisions: markerDecisions ?? [],
-      localMarkers: localMarkers ?? [],
-    })),
+    clips: batch.clips.map(
+      ({ id, proposed, note, held, reviewed, markerDecisions, localMarkers }) => ({
+        id,
+        proposed,
+        note,
+        held,
+        reviewed: reviewed ?? false,
+        markerDecisions: markerDecisions ?? [],
+        localMarkers: localMarkers ?? [],
+      }),
+    ),
   };
 }
 export function clipLabel(id: number) {

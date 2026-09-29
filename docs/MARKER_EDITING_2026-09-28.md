@@ -1,5 +1,11 @@
 # Marker editing verification — September 28, 2026
 
+**Subsequent correction:** the user clarified that Needs review / Reviewed should track whole clips. That progress flag now lives on the clip header with batch counts and a filter. Marker cards retain name-decision states only; additions, deletion, restore and verified file writing remain. The original implementation and verification below describe the first pass before that clarification.
+
+The correction and shutdown fix pass 144 tests across 21 files, the production build, TypeScript, and ESLint. Disposable browser checks cover clip review persistence, Undo/Redo, combined filters, held and filed clips, unchanged media, and resetting review after accepting an agent follow-up. Layouts were checked at 800, 1,920, and 3,840 pixels with no page overflow or browser exceptions. Feature-tour lesson 13 demonstrates reviewing an unchanged whole clip. The live practice upgrade preserved existing clips and decisions, and a read-only browser check confirmed the new lesson and playback.
+
+Restart verification exposed a shutdown issue: a paused media response could keep the process and project locks alive after the listening port closed. Shutdown now closes remaining HTTP connections after saves and moves finish. A process-level regression test reproduces the previous hang with a paused 64 MB response and verifies clean exit and lock release with the fix.
+
 Markers now support confirmed deletion, restore, explicit Needs review / Reviewed states, and additions at a chosen time or the Preview playhead. Imported and newly discovered chapters start Needs review. Accepting a name or keeping the original marks it Reviewed; editing resets that state. User-created markers start Reviewed and offer an explicit embedded/export-only choice. Embedded changes execute with Move clips and retain the original backup.
 
 ## Verification

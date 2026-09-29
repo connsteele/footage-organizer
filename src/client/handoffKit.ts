@@ -46,6 +46,7 @@ export function buildHandoffKit(
         note: clip.note,
         held: clip.held,
         applied: clip.applied,
+        reviewed: clip.reviewed ?? false,
         importIssue: clip.importIssue,
         questions: clip.original.questions,
         agentReview: clip.agentReview,

@@ -125,6 +125,33 @@ it('resets a suggestion without erasing the user note or releasing a user-held c
   });
 });
 
+it('tracks whole-clip review independently of holds and supports filters and saved undo/redo', async () => {
+  const { state } = renderReview();
+  const user = userEvent.setup();
+  const button = await screen.findByRole('button', { name: 'Reviewed clip 001' });
+  expect(button.getAttribute('aria-pressed')).toBe('false');
+  expect(button.textContent).toBe('Needs review');
+  await user.click(button);
+  expect(button.textContent).toBe('Reviewed');
+  expect(screen.getByText('1 of 1 clips reviewed')).toBeTruthy();
+  await waitFor(() => expect(state.batches[0].clips[0].reviewed).toBe(true), { timeout: 2500 });
+  expect(state.batches[0].clips[0].held).toBe(true);
+  expect(state.batches[0].clips[0].applied).toBe(false);
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Review status' }), 'unreviewed');
+  expect(screen.queryByRole('button', { name: 'Reviewed clip 001' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Undo edit' }));
+  await waitFor(() => expect(state.batches[0].clips[0].reviewed).toBe(false), { timeout: 2500 });
+  expect(screen.getByRole('button', { name: 'Reviewed clip 001' }).textContent).toBe(
+    'Needs review',
+  );
+  await user.click(screen.getByRole('button', { name: 'Redo edit' }));
+  await waitFor(() => expect(state.batches[0].clips[0].reviewed).toBe(true), { timeout: 2500 });
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Review status' }), 'reviewed');
+  expect(
+    screen.getByRole('button', { name: 'Reviewed clip 001' }).getAttribute('aria-pressed'),
+  ).toBe('true');
+});
+
 it('keeps invalid folders out of the draft and lets the user correct the open form', async () => {
   const { state } = renderReview();
   const user = userEvent.setup();

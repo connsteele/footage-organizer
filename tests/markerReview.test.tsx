@@ -89,19 +89,18 @@ function Editor({ preview = false, locked = false, applied = false, initial = fi
   );
 }
 
-it('starts unchanged markers needing review and permits explicit review without a rename', async () => {
+it('keeps unchanged marker names original without requiring individual review', async () => {
   const initial = fixture();
   initial.original.markerProposals = undefined;
   initial.markerDecisions = [];
   render(<Editor initial={initial} />);
   const user = userEvent.setup();
-  expect(screen.getByText(/Needs review/)).toBeTruthy();
+  expect(screen.getByText('Embedded chapter · Original')).toBeTruthy();
+  expect(screen.queryByText(/Needs review/)).toBeNull();
   const accept = screen.getByRole('button', { name: 'Accept name for marker chapter-1' });
-  expect(accept.title).toBe('Mark reviewed');
-  await user.click(accept);
-  expect(screen.getByText('Embedded chapter · Reviewed')).toBeTruthy();
+  expect((accept as HTMLButtonElement).disabled).toBe(true);
   await user.type(screen.getByRole('textbox'), ' change');
-  expect(screen.getByText(/Needs review/)).toBeTruthy();
+  expect(screen.getByText(/Name pending/)).toBeTruthy();
 });
 
 it('confirms deletion, hides deleted timeline markers, and restores them without changing the player', async () => {
@@ -148,7 +147,7 @@ it('adds a reviewed marker at the playhead and validates duplicate/end timestamp
   await user.type(dialog.getByLabelText('Time'), '6');
   await user.click(dialog.getByRole('button', { name: 'Add marker' }));
   expect(screen.getByRole('button', { name: 'Jump to 00:06.000: New event' })).toBeTruthy();
-  expect(screen.getByText('New chapter · Reviewed')).toBeTruthy();
+  expect(screen.getByText('New chapter · Accepted')).toBeTruthy();
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
@@ -163,7 +162,7 @@ it('compares New above Original with icon actions and reasoning available on dem
   expect(screen.getByText('Time:', { exact: false })).toBeTruthy();
   const accept = screen.getByRole('button', { name: 'Accept name for marker chapter-1' });
   expect(accept.textContent).toBe('');
-  expect(accept.title).toBe('Accept name and mark reviewed');
+  expect(accept.title).toBe('Accept name');
   const reason = screen.getByText('The visible event explains this name.');
   expect(reason.hidden).toBe(true);
   await user.click(screen.getByRole('button', { name: 'Why this name for marker chapter-1?' }));
@@ -174,7 +173,7 @@ it('compares New above Original with icon actions and reasoning available on dem
   expect(screen.getByText(/Keeping original/)).toBeTruthy();
   expect((field as HTMLInputElement).value).toBe('Reviewed event');
   await user.click(screen.getByRole('button', { name: 'Reset marker chapter-1' }));
-  expect(screen.getByText(/Needs review/)).toBeTruthy();
+  expect(screen.getByText(/Name pending/)).toBeTruthy();
 });
 
 it('reviews and seeks inside Preview without remounting playback or duplicating original chapter ticks', async () => {

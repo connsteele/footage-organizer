@@ -95,9 +95,6 @@ export const MarkerReview = memo(function MarkerReview({
     });
   }
   const deleted = entries.filter(({ marker }) => decisions.get(marker.id)?.status === 'deleted');
-  const unreviewed = entries.filter(
-    ({ marker }) => !decisions.has(marker.id) || decisions.get(marker.id)?.status === 'pending',
-  ).length;
   function closeAdd() {
     setAdding(false);
     setError('');
@@ -156,9 +153,6 @@ export const MarkerReview = memo(function MarkerReview({
     <section className={styles.markerReview} aria-label={`Marker names for clip ${clip.id}`}>
       {showHeading && <h3>Marker names</h3>}
       <div className={styles.markerToolbar}>
-        <span>
-          {unreviewed} need review · {entries.length - deleted.length - unreviewed} reviewed
-        </span>
         <button
           className={styles.secondary}
           disabled={disabled}
@@ -268,13 +262,15 @@ export const MarkerReview = memo(function MarkerReview({
                     : 'Embedded chapter'
                   : 'Export only'}{' '}
                 ·{' '}
-                {decision?.status === 'accepted'
-                  ? clip.applied && m.chapterIndex !== undefined
-                    ? 'Written to file'
-                    : 'Reviewed'
-                  : decision?.status === 'rejected'
-                    ? 'Reviewed · Keeping original'
-                    : 'Needs review'}
+                {decision?.status === 'rejected'
+                  ? 'Keeping original'
+                  : decision?.status === 'accepted' && (label !== m.label || m.origin === 'added')
+                    ? clip.applied && writesMarker(m)
+                      ? 'Written to file'
+                      : 'Accepted'
+                    : label !== m.label || m.origin === 'added'
+                      ? 'Name pending'
+                      : 'Original'}
               </span>
             </div>
             <div className={styles.markerNames}>
@@ -290,11 +286,15 @@ export const MarkerReview = memo(function MarkerReview({
               <button
                 type="button"
                 className={styles.markerAction}
-                title={label.trim() === m.label ? 'Mark reviewed' : 'Accept name and mark reviewed'}
+                title="Accept name"
                 aria-label={`Accept name for marker ${m.id}`}
                 aria-pressed={decision?.status === 'accepted'}
                 disabled={
-                  locked || clip.applied || !label.trim() || decision?.status === 'accepted'
+                  locked ||
+                  clip.applied ||
+                  !label.trim() ||
+                  decision?.status === 'accepted' ||
+                  (m.origin !== 'added' && label.trim() === m.label)
                 }
                 onClick={() => decide(m.id, label.trim(), 'accepted')}
               >
@@ -343,7 +343,7 @@ export const MarkerReview = memo(function MarkerReview({
                 <button
                   type="button"
                   className={styles.iconButton}
-                  title="Mark as needs review"
+                  title="Reset marker name"
                   aria-label={`Reset marker ${m.id}`}
                   disabled={locked || clip.applied}
                   onClick={() => decide(m.id, suggestion?.proposedLabel ?? label, 'pending')}
@@ -423,8 +423,7 @@ export const MarkerReview = memo(function MarkerReview({
               Write an embedded chapter with Move clips
             </label>
             <p className={styles.muted}>
-              New markers start Reviewed. Uncheck this to keep the marker in the app and exports
-              only.
+              Uncheck this to keep the marker in the app and exports only.
             </p>
             {error && (
               <p role="alert" className={styles.error}>

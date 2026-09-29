@@ -41,7 +41,7 @@ import { api, download, errorText } from './api';
 import { useDraft } from './useDraft';
 import { Modal } from './Modal';
 import { HeldReviewTools } from './HeldReviewTools';
-import { markerExport, sourceMarkers, needsMarkerReview } from '../shared/markers';
+import { markerExport, sourceMarkers, pendingMarkerChanges } from '../shared/markers';
 import { groupClipsByFolder } from '../shared/clipGroups';
 import { folderProblem } from '../shared/filenames';
 import { ClipRow } from './ClipRow';
@@ -131,6 +131,7 @@ function ReviewSession({
   } = useDraft(project.id, initial);
   const [search, setSearch] = useState('');
   const [clipView, setClipView] = useState<'remaining' | 'held' | 'filed' | 'all'>('remaining');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'unreviewed' | 'reviewed'>('all');
   const [error, setError] = useState('');
   const [review, setReview] = useState<MoveReview | null>(null);
   const [checking, setChecking] = useState(false);
@@ -183,6 +184,7 @@ function ReviewSession({
   const held = batch.clips.filter((c) => c.held && !c.applied).length;
   const moved = batch.clips.filter((c) => c.applied).length;
   const remaining = batch.clips.length - moved;
+  const reviewedCount = batch.clips.filter((c) => c.reviewed).length;
   const views = [
     { value: 'remaining', label: 'Remaining', count: remaining },
     { value: 'held', label: 'Held', count: held },
@@ -193,6 +195,7 @@ function ReviewSession({
     (c) =>
       (clipView === 'all' ||
         (clipView === 'filed' ? c.applied : !c.applied && (clipView !== 'held' || c.held))) &&
+      (reviewFilter === 'all' || (reviewFilter === 'reviewed' ? c.reviewed : !c.reviewed)) &&
       [
         String(c.id),
         clipLabel(c.id),
@@ -424,6 +427,23 @@ function ReviewSession({
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <label className={styles.reviewFilter}>
+          Review status
+          <select
+            value={reviewFilter}
+            onChange={(event) => {
+              setPreviewClip(null);
+              setReviewFilter(event.target.value as typeof reviewFilter);
+            }}
+          >
+            <option value="all">All review states</option>
+            <option value="unreviewed">Needs review</option>
+            <option value="reviewed">Reviewed</option>
+          </select>
+        </label>
+        <span className={styles.reviewProgress}>
+          {reviewedCount} of {batch.clips.length} clips reviewed
+        </span>
         <div className={styles.toolbarEnd}>
           <button
             className={styles.iconButton}
@@ -488,6 +508,7 @@ function ReviewSession({
             const clips = filteredGroups.get(folderName) ?? [];
             const emptyDestination =
               !search &&
+              reviewFilter === 'all' &&
               (clipView === 'all' || (clipView === 'remaining' && remaining > 0)) &&
               !occupiedFolders.has(folderName);
             if (!clips.length && active === null && !emptyDestination) return null;
@@ -536,10 +557,10 @@ function ReviewSession({
           })}
           {!filtered.length && (
             <div className={styles.empty}>
-              {search ? (
+              {search || reviewFilter !== 'all' ? (
                 <>
                   <h3>No matching clips in this view</h3>
-                  <p>Clear the search or choose another status above.</p>
+                  <p>Clear the search or choose another file or review status above.</p>
                 </>
               ) : clipView === 'remaining' ? (
                 <>
@@ -864,11 +885,11 @@ function ReviewSession({
                           : `${m.originalLabel || '(unnamed)'} → ${m.label}`}
                     </p>
                   ))}
-                  {!!needsMarkerReview(batch.clips.find((c) => c.id === item.clipId)!) && (
+                  {!!pendingMarkerChanges(batch.clips.find((c) => c.id === item.clipId)!) && (
                     <p className={styles.conflict}>
-                      Unreviewed existing markers keep their original names; unreviewed additions
-                      are not written. Go back to Details to review them before filing; filed
-                      decisions are locked.
+                      Pending marker names keep their originals; pending additions are not written.
+                      Accept the marker changes you want before filing; filed marker decisions are
+                      locked.
                     </p>
                   )}
                 </div>

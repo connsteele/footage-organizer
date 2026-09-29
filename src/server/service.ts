@@ -350,6 +350,7 @@ export class Organizer {
           note: '',
           held: clip.hold || clip.questions.length > 0,
           applied: false,
+          reviewed: false,
           ...(clip.markerProposals
             ? { markerDecisions: initialMarkerDecisions(clip.markerProposals) }
             : {}),
@@ -403,6 +404,7 @@ export class Organizer {
         clip.proposed = { ...change.proposed };
         clip.note = change.note;
         clip.held = change.held;
+        if (change.reviewed !== undefined) clip.reviewed = change.reviewed;
         if (change.markerDecisions !== undefined || change.localMarkers !== undefined) {
           const localMarkers = change.localMarkers ?? clip.localMarkers;
           const markerDecisions = change.markerDecisions ?? clip.markerDecisions;

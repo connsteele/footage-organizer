@@ -75,7 +75,13 @@ export function practiceHandoff(startId = 1): Handoff {
     {
       group: '12 Add delete and review markers',
       source: 'Marker editing - remove the start and add an event.mp4',
-      help: 'Every imported marker starts Needs review, even when its name stays the same. Use the check on the middle marker to mark it Reviewed. Delete the start marker with the trash icon: cancel once, then confirm. It disappears from the timeline; Show deleted markers lets you restore it before filing. Seek to six seconds, choose Add marker, and name the visible event. New markers start Reviewed. Leave the embedded chapter option checked to write it with Move clips, or uncheck for app and export only. Try Undo/Redo and reload to check saved decisions. Confirm Move clips to remove the start chapter and write the new event while retaining the original footage as a backup.',
+      help: 'Delete the start marker with the trash icon: cancel once, then confirm. It disappears from the timeline; Show deleted markers lets you restore it before filing. Seek to six seconds, choose Add marker, and name the visible event. Leave the embedded chapter option checked to write it with Move clips, or uncheck for app and export only. Try Undo/Redo and reload to check saved decisions. Confirm Move clips to remove the start chapter and write the new event while retaining the original footage as a backup. Needs review and Reviewed track the whole clip using its header button; individual marker buttons only accept names.',
+    },
+    {
+      group: '13 Clip review progress',
+      source: 'Whole clip review - no file changes needed.mp4',
+      destination: `${practiceReviewFolder}/13 Clip review progress`,
+      help: 'This unchanged clip starts Needs review. Look over the preview, name, destination and notes, then click Needs review in the clip header to mark the whole clip Reviewed. The reviewed count increases without moving a file or accepting marker suggestions. Use Review status to show only Needs review or Reviewed, and try Undo/Redo or reload. Click Reviewed to undo the check. Held and Filed are separate states. A returned agent update resets clip review so you can inspect the new suggestions. Review labels refer to whole clips, including in the earlier marker-editing lesson.',
     },
   ];
   return {
@@ -90,10 +96,11 @@ export function practiceHandoff(startId = 1): Handoff {
       'These are generated practice videos. Each numbered folder demonstrates a feature; open Details for the steps. No real footage is included.',
       'Start with Rename only, Move only, and Rename and move. Try restoring a name, Undo/Redo, dragging, and a new destination folder. Open Video and markers to practice playback and marker seeking.',
       'Held review starts held; leave a question in Your note and export it through Agent follow-up. Unchanged clip is deliberately skipped by Move clips and stays in Remaining.',
-      'With the initial suggestions, Move clips includes nine clips, skips one held clip and one unchanged clip. After filing, use Filed or All to inspect completed work, then Start next batch to see the handoff workflow.',
+      'With the initial suggestions, Move clips includes nine clips, skips one held clip and two unchanged clips. After filing, use Filed or All to inspect completed work, then Start next batch to see the handoff workflow.',
       'Example 10: review marker names before naming the clip. Accept, edit, or keep originals in Preview or Details. Accepted embedded names are written only with Move clips, keeping an original backup. Start next batch includes embedded marker extraction in its kit. Editor-only markers remain export-only.',
       'Example 11: scroll through many markers in Preview. The panel stays bounded even on a large display. Both marker card types seek when clicked; editing and review controls keep their own actions.',
-      'Example 12: mark unchanged names Reviewed, confirm deletion, restore deleted markers, and add a marker at the playhead. File the clip to apply embedded additions and deletions.',
+      'Example 12: confirm marker deletion, restore deleted markers, and add a marker at the playhead. File the clip to apply embedded additions and deletions.',
+      'Example 13: Needs review and Reviewed belong to the whole clip, independently of marker-name decisions, holds and filing. Try the clip header toggle, progress count and Review status filter without changing any files.',
     ].join('\n\n'),
     folders: [`${filed}/09 Try dropping a clip here`],
     clips: examples.map((item, index) => ({

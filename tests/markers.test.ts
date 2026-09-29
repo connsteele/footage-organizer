@@ -11,10 +11,11 @@ import { editOf, isPending, type Handoff } from '../src/shared/model';
 import {
   markerExport,
   validateMarkerProposals,
-  needsMarkerReview,
+  pendingMarkerChanges,
   effectiveMarkers,
 } from '../src/shared/markers';
 import { validateHandoff } from '../scripts/validate-handoff';
+import { batchMarkdown } from '../src/shared/markdown';
 
 const scratch = path.resolve(
   process.env.FO_TEST_DIR || path.join((await loadConfig()).tempDir, 'footage-organizer-tests'),
@@ -113,7 +114,7 @@ it('persists add/delete/review decisions, exports active markers separately, and
     status: 'accepted',
   });
   const batch = await f.service.saveBatch('markers', 'batch', edit);
-  expect(needsMarkerReview(batch.clips[0])).toBe(1);
+  expect(pendingMarkerChanges(batch.clips[0])).toBe(1);
   expect(effectiveMarkers(batch.clips[0]).map((m) => m.label)).toEqual([
     'Editor note',
     'New event',
@@ -133,6 +134,26 @@ it('persists add/delete/review decisions, exports active markers separately, and
     'Old event',
     'Editor note',
   ]);
+});
+
+it('saves clip review for unchanged and filed clips without accepting markers or changing file work', async () => {
+  const f = await fixture();
+  expect(f.batch.clips[0].reviewed).toBe(false);
+  const edit = editOf(f.batch);
+  edit.clips[0].reviewed = true;
+  const saved = await f.service.saveBatch('markers', 'batch', edit);
+  expect(saved.clips[0].reviewed).toBe(true);
+  expect(saved.clips[0].markerDecisions).toEqual(f.batch.clips[0].markerDecisions);
+  expect(isPending(saved.clips[0])).toBe(false);
+  const state = await f.store.load('markers');
+  expect(batchMarkdown(state.project, saved)).toContain('| Reviewed |');
+  state.batches[0].clips[0].applied = true;
+  await f.store.save(state);
+  const filed = editOf(state.batches[0]);
+  filed.clips[0].reviewed = false;
+  const unchecked = await f.service.saveBatch('markers', 'batch', filed);
+  expect(unchecked.clips[0]).toMatchObject({ reviewed: false, applied: true });
+  expect(await readFile(path.join(f.media, 'Clip.mp4'), 'utf8')).toBe('original media');
 });
 
 it('undoes the first decision on a discovered chapter when legacy state has no marker fields', async () => {
@@ -430,6 +451,7 @@ it('retains unmentioned marker decisions and reasoning across successive held fo
   const f = await fixture();
   const edit = editOf(await accept(f));
   edit.clips[0].held = true;
+  edit.clips[0].reviewed = true;
   await f.service.saveBatch('markers', 'batch', edit);
   for (let index = 0; index < 2; index++) {
     const { request } = await f.service.updates.exportHeld('markers', 'batch');
@@ -470,6 +492,7 @@ it('retains unmentioned marker decisions and reasoning across successive held fo
       clipIds: [1],
     });
     expect(saved.clips[0].original.markers).toEqual(markers);
+    expect(saved.clips[0].reviewed).toBe(false);
     expect(saved.clips[0].markerDecisions?.find((d) => d.markerId === 'embedded-1')?.status).toBe(
       'accepted',
     );

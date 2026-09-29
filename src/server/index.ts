@@ -29,7 +29,9 @@ async function shutdown() {
     await store.release();
     process.exit(0);
   });
-  server.closeIdleConnections();
+  // Saves and moves are drained. A paused video response can otherwise keep
+  // the server and its project locks alive indefinitely after Stop app.
+  server.closeAllConnections();
 }
 const server = createServer(
   createApp(service, {

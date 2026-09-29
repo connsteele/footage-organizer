@@ -85,10 +85,14 @@ it('adds new lessons once without regenerating or changing existing edited and f
     const editing = after.batches[0].clips[10];
     expect(editing.id).toBe(51);
     expect(editing.original.markers).toHaveLength(3);
-    expect(editing.original.rationale).toContain('Needs review');
+    expect(editing.original.rationale).toContain('whole clip');
+    const clipReview = after.batches[0].clips[11];
+    expect(clipReview.id).toBe(52);
+    expect(clipReview.original.rationale).toContain('without moving a file');
     expect(generation.mock.calls[0][4]).toEqual([
       added.original.source.relativePath,
       editing.original.source.relativePath,
+      clipReview.original.source.relativePath,
     ]);
     expect(await upgradePracticeTour(store, scratch)).toBe(false);
     expect(generation).toHaveBeenCalledTimes(1);
@@ -147,7 +151,7 @@ it('teaches nine moves, a hold and an unchanged clip without replacing an earlie
   expect(review.issues).toEqual([]);
   expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50, 51]);
   expect(review.held).toBe(1);
-  expect(review.unchanged).toBe(1);
+  expect(review.unchanged).toBe(2);
   expect(review.newFolders).toEqual([handoff.clips[7].proposed.folder]);
   expect(review.items[0].from.split('/').slice(0, -1)).toEqual(
     review.items[0].to.split('/').slice(0, -1),
@@ -163,7 +167,7 @@ it('teaches nine moves, a hold and an unchanged clip without replacing an earlie
   expect(await readFile(path.join(media, 'Earlier.mp4'), 'utf8')).toBe('earlier footage');
   const filed = after.batches.find((b) => b.id === batch.id)!;
   expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(9);
-  expect(filed.clips.filter((clip) => !clip.applied).map((clip) => clip.id)).toEqual([45, 47]);
+  expect(filed.clips.filter((clip) => !clip.applied).map((clip) => clip.id)).toEqual([45, 47, 52]);
   for (const item of review.items)
     expect(await readFile(path.join(media, item.to), 'utf8')).toBe(
       `generated fixture ${item.clipId}`,

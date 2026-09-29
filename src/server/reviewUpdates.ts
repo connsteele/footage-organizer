@@ -118,6 +118,7 @@ export class ReviewUpdates {
           conflicts.push('Batch decisions changed after this review was exported.');
         if (
           current.note !== exported.note ||
+          (current.reviewed ?? false) !== (exported.reviewed ?? false) ||
           JSON.stringify(current.proposed) !== JSON.stringify(exported.proposed) ||
           JSON.stringify(current.agentReview) !== JSON.stringify(exported.agentReview) ||
           JSON.stringify(current.markerDecisions ?? []) !==
@@ -195,6 +196,7 @@ export class ReviewUpdates {
         const clip = item.current!;
         clip.proposed = { ...item.suggestion.proposed };
         clip.held = true;
+        clip.reviewed = false;
         if (item.suggestion.markerProposals) {
           const fresh = initialMarkerDecisions(item.suggestion.markerProposals);
           clip.markerDecisions = [
