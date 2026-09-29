@@ -53,7 +53,7 @@ export function practiceHandoff(startId = 1): Handoff {
       group: '07 Unchanged clip',
       source: 'Already named and placed.mp4',
       destination: `${practiceReviewFolder}/07 Unchanged clip`,
-      help: 'Unchanged: this clip already matches its proposal. Move clips skips it. It remains in Remaining because no file operation has filed it; this is different from a completed move.',
+      help: 'Unchanged: this clip already matches its proposal. Mark it Reviewed to clear it from Remaining. It appears in Move queue as already in place; Move clips skips it because no file change is needed.',
     },
     {
       group: '08 New folder and dragging',
@@ -81,7 +81,12 @@ export function practiceHandoff(startId = 1): Handoff {
       group: '13 Clip review progress',
       source: 'Whole clip review - no file changes needed.mp4',
       destination: `${practiceReviewFolder}/13 Clip review progress`,
-      help: 'This unchanged clip starts Needs review. Look over the preview, name, destination and notes, then click Needs review in the clip header to mark the whole clip Reviewed. The reviewed count increases without moving a file or accepting marker suggestions. Use Review status to show only Needs review or Reviewed, and try Undo/Redo or reload. Click Reviewed to undo the check. Held and Filed are separate states. A returned agent update resets clip review so you can inspect the new suggestions. Review labels refer to whole clips, including in the earlier marker-editing lesson.',
+      help: 'This unchanged clip starts Needs review. Look over the preview, name, destination and notes, then click Needs review in the clip header to mark the whole clip Reviewed. It leaves Remaining for Move queue without moving a file or accepting marker suggestions. No file work is needed for this clip. Use Review status in All or Held to filter review progress, and try Undo/Redo or reload. Click Reviewed in the queue to return it to Remaining. Held and Filed are separate states. A returned agent update resets clip review so you can inspect the new suggestions.',
+    },
+    {
+      group: '14 Review stack and move queue',
+      source: 'Review then queue - pending marker names.mp4',
+      help: 'Watch the three markers to review badge decrease as you accept a name, keep Original, or delete a marker. Review the whole clip, then click Needs review: it leaves Remaining and appears in Move queue. No files move yet. In Move queue, click Reviewed to send it back, or use Undo/Redo. Search filters the view while Move clips includes the entire reviewed queue. Held clips stay in Held even when reviewed; unchanged reviewed clips stay in the queue as already in place. Move clips excludes unreviewed and held clips. Use All to combine search with Review status. This workflow also applies to earlier lessons.',
     },
   ];
   return {
@@ -95,12 +100,13 @@ export function practiceHandoff(startId = 1): Handoff {
     reviewNotes: [
       'These are generated practice videos. Each numbered folder demonstrates a feature; open Details for the steps. No real footage is included.',
       'Start with Rename only, Move only, and Rename and move. Try restoring a name, Undo/Redo, dragging, and a new destination folder. Open Video and markers to practice playback and marker seeking.',
-      'Held review starts held; leave a question in Your note and export it through Agent follow-up. Unchanged clip is deliberately skipped by Move clips and stays in Remaining.',
-      'With the initial suggestions, Move clips includes nine clips, skips one held clip and two unchanged clips. After filing, use Filed or All to inspect completed work, then Start next batch to see the handoff workflow.',
+      'Held review starts held; leave a question in Your note and export it through Agent follow-up. Unchanged clips need no file work, but marking them Reviewed clears them from Remaining.',
+      'Clips start in Remaining. Mark clips Reviewed to put them in Move queue; ten clips have file changes, one is held and two are unchanged. Move clips includes only reviewed clips with file changes. After filing, use Filed or All to inspect completed work, then Start next batch.',
       'Example 10: review marker names before naming the clip. Accept, edit, or keep originals in Preview or Details. Accepted embedded names are written only with Move clips, keeping an original backup. Start next batch includes embedded marker extraction in its kit. Editor-only markers remain export-only.',
       'Example 11: scroll through many markers in Preview. The panel stays bounded even on a large display. Both marker card types seek when clicked; editing and review controls keep their own actions.',
       'Example 12: confirm marker deletion, restore deleted markers, and add a marker at the playhead. File the clip to apply embedded additions and deletions.',
       'Example 13: Needs review and Reviewed belong to the whole clip, independently of marker-name decisions, holds and filing. Try the clip header toggle, progress count and Review status filter without changing any files.',
+      'Example 14: work down Remaining into Move queue, resolve pending marker-name counts, and file only the reviewed queue. Held clips stay in Held; unchanged reviewed clips are already in place.',
     ].join('\n\n'),
     folders: [`${filed}/09 Try dropping a clip here`],
     clips: examples.map((item, index) => ({
@@ -108,7 +114,7 @@ export function practiceHandoff(startId = 1): Handoff {
       source: { relativePath: `${practiceReviewFolder}/${item.group}/${item.source}` },
       duration: 12,
       markers:
-        index === 8 || index === 10
+        index === 8 || index === 10 || index === 12
           ? practiceEmbeddedMarkers()
           : index === 9
             ? Array.from({ length: 24 }, (_, i) => ({
@@ -129,7 +135,7 @@ export function practiceHandoff(startId = 1): Handoff {
       rationale: item.help,
       questions: item.question ? [item.question] : [],
       hold: !!item.question,
-      ...(index === 8
+      ...(index === 8 || index === 12
         ? {
             markerProposals: {
               schemaVersion: 1 as const,

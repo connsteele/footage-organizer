@@ -89,10 +89,15 @@ it('adds new lessons once without regenerating or changing existing edited and f
     const clipReview = after.batches[0].clips[11];
     expect(clipReview.id).toBe(52);
     expect(clipReview.original.rationale).toContain('without moving a file');
+    const queue = after.batches[0].clips[12];
+    expect(queue.id).toBe(53);
+    expect(queue.original.markerProposals?.items).toHaveLength(3);
+    expect(queue.original.rationale).toContain('Move queue');
     expect(generation.mock.calls[0][4]).toEqual([
       added.original.source.relativePath,
       editing.original.source.relativePath,
       clipReview.original.source.relativePath,
+      queue.original.source.relativePath,
     ]);
     expect(await upgradePracticeTour(store, scratch)).toBe(false);
     expect(generation).toHaveBeenCalledTimes(1);
@@ -149,7 +154,7 @@ it('teaches nine moves, a hold and an unchanged clip without replacing an earlie
   const batch = await service.importHandoff('practice', handoff);
   const review = await service.review('practice', batch.id);
   expect(review.issues).toEqual([]);
-  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50, 51]);
+  expect(review.items.map((item) => item.clipId)).toEqual([41, 42, 43, 44, 46, 48, 49, 50, 51, 53]);
   expect(review.held).toBe(1);
   expect(review.unchanged).toBe(2);
   expect(review.newFolders).toEqual([handoff.clips[7].proposed.folder]);
@@ -166,7 +171,7 @@ it('teaches nine moves, a hold and an unchanged clip without replacing an earlie
   expect(after.batches.find((b) => b.id === oldBatch.id)).toEqual(before.batches[0]);
   expect(await readFile(path.join(media, 'Earlier.mp4'), 'utf8')).toBe('earlier footage');
   const filed = after.batches.find((b) => b.id === batch.id)!;
-  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(9);
+  expect(filed.clips.filter((clip) => clip.applied)).toHaveLength(10);
   expect(filed.clips.filter((clip) => !clip.applied).map((clip) => clip.id)).toEqual([45, 47, 52]);
   for (const item of review.items)
     expect(await readFile(path.join(media, item.to), 'utf8')).toBe(

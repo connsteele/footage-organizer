@@ -29,6 +29,7 @@ import {
   durationLabel,
   editOf,
   isPending,
+  isInMoveQueue,
   targetPath,
   type Batch,
   type ClipEdit,
@@ -130,7 +131,9 @@ function ReviewSession({
     canRedo,
   } = useDraft(project.id, initial);
   const [search, setSearch] = useState('');
-  const [clipView, setClipView] = useState<'remaining' | 'held' | 'filed' | 'all'>('remaining');
+  const [clipView, setClipView] = useState<'remaining' | 'queue' | 'held' | 'filed' | 'all'>(
+    'remaining',
+  );
   const [reviewFilter, setReviewFilter] = useState<'all' | 'unreviewed' | 'reviewed'>('all');
   const [error, setError] = useState('');
   const [review, setReview] = useState<MoveReview | null>(null);
@@ -183,10 +186,14 @@ function ReviewSession({
   const pending = batch.clips.filter(isPending).length;
   const held = batch.clips.filter((c) => c.held && !c.applied).length;
   const moved = batch.clips.filter((c) => c.applied).length;
-  const remaining = batch.clips.length - moved;
+  const remaining = batch.clips.filter((c) => !c.applied && !c.reviewed).length;
+  const queued = batch.clips.filter(isInMoveQueue);
+  const ready = queued.filter(isPending).length;
+  const queuedUnchanged = queued.length - ready;
   const reviewedCount = batch.clips.filter((c) => c.reviewed).length;
   const views = [
     { value: 'remaining', label: 'Remaining', count: remaining },
+    { value: 'queue', label: 'Move queue', count: queued.length },
     { value: 'held', label: 'Held', count: held },
     { value: 'filed', label: 'Filed', count: moved },
     { value: 'all', label: 'All', count: batch.clips.length },
@@ -194,7 +201,11 @@ function ReviewSession({
   const filtered = batch.clips.filter(
     (c) =>
       (clipView === 'all' ||
-        (clipView === 'filed' ? c.applied : !c.applied && (clipView !== 'held' || c.held))) &&
+        (clipView === 'filed'
+          ? c.applied
+          : clipView === 'queue'
+            ? isInMoveQueue(c)
+            : !c.applied && (clipView === 'held' ? c.held : !c.reviewed))) &&
       (reviewFilter === 'all' || (reviewFilter === 'reviewed' ? c.reviewed : !c.reviewed)) &&
       [
         String(c.id),
@@ -209,6 +220,13 @@ function ReviewSession({
   const totalSeconds = batch.clips.reduce((n, c) => n + (c.original.duration || 0), 0);
   const filteredGroups = groupClipsByFolder(filtered);
   const occupiedFolders = new Set(batch.clips.map((c) => c.proposed.folder));
+  function chooseView(view: typeof clipView) {
+    setPreviewClip(null);
+    setClipView(view);
+    // Remaining and Move queue already specify review state. Avoid carrying a
+    // contradictory filter from All/Held/Filed into these workflow views.
+    setReviewFilter('all');
+  }
   async function startNextBatch() {
     try {
       await flush();
@@ -267,7 +285,13 @@ function ReviewSession({
         <div>
           <div className={styles.titleRow}>
             <span className={styles.pill}>
-              {pending ? 'IN REVIEW' : held ? 'ON HOLD' : 'ALL IN PLACE'}
+              {remaining
+                ? 'IN REVIEW'
+                : ready
+                  ? 'READY TO MOVE'
+                  : held
+                    ? 'ON HOLD'
+                    : 'ALL IN PLACE'}
             </span>
             <span className={styles.saveState}>
               {status === 'saved' ? (
@@ -408,10 +432,7 @@ function ReviewSession({
             key={view.value}
             className={`${styles.filterButton} ${clipView === view.value ? styles.filterActive : ''}`}
             aria-pressed={clipView === view.value}
-            onClick={() => {
-              setPreviewClip(null);
-              setClipView(view.value);
-            }}
+            onClick={() => chooseView(view.value)}
           >
             {view.label} <span>{view.count}</span>
           </button>
@@ -427,21 +448,23 @@ function ReviewSession({
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <label className={styles.reviewFilter}>
-          Review status
-          <select
-            value={reviewFilter}
-            onChange={(event) => {
-              setPreviewClip(null);
-              setReviewFilter(event.target.value as typeof reviewFilter);
-            }}
-          >
-            <option value="all">All review states</option>
-            <option value="unreviewed">Needs review</option>
-            <option value="reviewed">Reviewed</option>
-          </select>
-        </label>
-        <span className={styles.reviewProgress}>
+        {clipView !== 'remaining' && clipView !== 'queue' && (
+          <label className={styles.reviewFilter}>
+            Review status
+            <select
+              value={reviewFilter}
+              onChange={(event) => {
+                setPreviewClip(null);
+                setReviewFilter(event.target.value as typeof reviewFilter);
+              }}
+            >
+              <option value="all">All review states</option>
+              <option value="unreviewed">Needs review</option>
+              <option value="reviewed">Reviewed</option>
+            </select>
+          </label>
+        )}
+        <span className={styles.reviewProgress} role="status">
           {reviewedCount} of {batch.clips.length} clips reviewed
         </span>
         <div className={styles.toolbarEnd}>
@@ -479,11 +502,13 @@ function ReviewSession({
         <span>
           {clipView === 'remaining'
             ? 'REMAINING CLIPS'
-            : clipView === 'held'
-              ? 'HELD FOR REVIEW'
-              : clipView === 'filed'
-                ? 'FILED CLIPS'
-                : 'ALL CLIPS'}
+            : clipView === 'queue'
+              ? 'MOVE QUEUE'
+              : clipView === 'held'
+                ? 'HELD FOR REVIEW'
+                : clipView === 'filed'
+                  ? 'FILED CLIPS'
+                  : 'ALL CLIPS'}
         </span>
         <span>
           {clipView === 'filed'
@@ -491,6 +516,12 @@ function ReviewSession({
             : 'Drag a clip into a folder, or open Details to choose its destination.'}
         </span>
       </div>
+      {clipView === 'queue' && (
+        <p className={styles.muted}>
+          Reviewed clips wait here until you confirm Move clips. Held clips stay in Held.
+          {queuedUnchanged > 0 && ` ${queuedUnchanged} already in place; no file changes needed.`}
+        </p>
+      )}
       <DndContext
         sensors={sensors}
         onDragStart={(event) => setActive(Number(event.active.id))}
@@ -509,7 +540,9 @@ function ReviewSession({
             const emptyDestination =
               !search &&
               reviewFilter === 'all' &&
-              (clipView === 'all' || (clipView === 'remaining' && remaining > 0)) &&
+              (clipView === 'all' ||
+                (clipView === 'remaining' && remaining > 0) ||
+                (clipView === 'queue' && queued.length > 0)) &&
               !occupiedFolders.has(folderName);
             if (!clips.length && active === null && !emptyDestination) return null;
             return (
@@ -564,19 +597,33 @@ function ReviewSession({
                 </>
               ) : clipView === 'remaining' ? (
                 <>
-                  <h3>All clips filed</h3>
-                  <p>This batch is saved. Start your next batch whenever you are ready.</p>
-                  <button className={styles.textButton} onClick={() => setClipView('filed')}>
-                    View filed clips
+                  <h3>No clips left to review</h3>
+                  <p>
+                    {queued.length
+                      ? 'Your reviewed clips are in Move queue.'
+                      : 'This batch is saved.'}
+                    {held > 0 && ` ${held} held clips remain available in Held.`}
+                  </p>
+                  <button
+                    className={styles.textButton}
+                    onClick={() => chooseView(queued.length ? 'queue' : held ? 'held' : 'filed')}
+                  >
+                    {queued.length
+                      ? 'View move queue'
+                      : held
+                        ? 'View held clips'
+                        : 'View filed clips'}
                   </button>
                 </>
               ) : (
                 <h3>
-                  {clipView === 'held'
-                    ? 'No clips held for review'
-                    : clipView === 'filed'
-                      ? 'No filed clips yet'
-                      : 'No clips in this batch'}
+                  {clipView === 'queue'
+                    ? 'No clips in the move queue — mark a clip Reviewed to add it'
+                    : clipView === 'held'
+                      ? 'No clips held for review'
+                      : clipView === 'filed'
+                        ? 'No filed clips yet'
+                        : 'No clips in this batch'}
                 </h3>
               )}
             </div>
@@ -677,22 +724,24 @@ function ReviewSession({
       <div className={styles.actionbar} data-review-actions>
         <div>
           <strong>
-            {pending
-              ? `${pending} clips ready to move`
-              : held
-                ? `${held} clips held for review`
-                : remaining
-                  ? 'No pending moves'
-                  : 'All clips filed'}
+            {ready
+              ? `${ready} clips ready to move`
+              : remaining
+                ? `${remaining} clips left to review`
+                : held
+                  ? `${held} clips held for review`
+                  : queued.length
+                    ? 'No pending moves'
+                    : 'All clips filed'}
           </strong>
           <span>
-            {pending && (search || clipView === 'held' || clipView === 'filed')
-              ? 'Move clips includes all pending placements in this batch; held clips stay in place.'
-              : held
-                ? `${held} held clips will stay where they are.`
-                : remaining
-                  ? 'Your edits become file changes after you confirm.'
-                  : 'Filed clips and notes remain available in the Filed view.'}
+            {ready
+              ? 'Move clips includes the whole move queue, regardless of filters. Held and unreviewed clips stay in place.'
+              : remaining
+                ? 'Mark clips Reviewed to build your move queue.'
+                : queuedUnchanged
+                  ? 'Reviewed clips already in place remain in Move queue; no files need changing.'
+                  : 'Held and filed clips remain available in their views.'}
           </span>
         </div>
         <div className={styles.inlineActions}>
@@ -740,14 +789,14 @@ function ReviewSession({
           >
             Export plan
           </button>
-          {pending ? (
+          {ready || remaining ? (
             <button
               className={styles.primary}
-              disabled={!pending || checking || locked || status === 'error'}
+              disabled={!ready || checking || locked || status === 'error'}
               onClick={() => void checkMoves()}
             >
               {checking ? <LoaderCircle size={17} className={styles.spin} /> : <Folder size={17} />}
-              {checking ? 'Checking files…' : `Move clips · ${pending}`}
+              {checking ? 'Checking files…' : `Move clips · ${ready}`}
               <ArrowRight size={17} />
             </button>
           ) : (
@@ -837,8 +886,9 @@ function ReviewSession({
         >
           <p>
             {review.items.length} clips will be moved, renamed, or have reviewed marker changes
-            written. {review.held} held · {review.unchanged} unchanged. This includes pending clips
-            hidden by search or status filters.
+            written from the move queue. {review.held} held · {review.unreviewed ?? 0} not reviewed
+            · {review.unchanged} unchanged. Search and status filters do not change which queued
+            clips are included.
           </p>
           {review.items.some((i) => i.markerChanges?.length) && (
             <p>

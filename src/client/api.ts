@@ -1,21 +1,21 @@
 let sessionToken: string | null = null;
-let clipReviewAvailable = false;
+let moveQueueAvailable = false;
 async function session() {
   const response = await fetch('/api/session');
   if (!response.ok)
     throw new Error('Cannot connect to Footage Organizer. Start the local app and reload.');
   const data = await response.json();
   sessionToken = data.token;
-  clipReviewAvailable = data.features?.includes('clip-review-v1') ?? false;
+  moveQueueAvailable = data.features?.includes('move-queue-v1') ?? false;
 }
 export async function api<T>(
   url: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   if (!sessionToken) await session();
-  if (!clipReviewAvailable && url !== '/shutdown')
+  if (!moveQueueAvailable && url !== '/shutdown')
     throw new Error(
-      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable clip review.',
+      'The app has been updated. Stop and relaunch Footage Organizer, then reload this page to enable the move queue.',
     );
   const response = await fetch(`/api${url}`, {
     method: options.method || 'GET',

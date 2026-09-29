@@ -71,6 +71,33 @@ it('reports oversized and malformed JSON as input errors', async () => {
   expect(oversized.status).toBe(413);
   expect((await oversized.json()).error).toContain('8 MB');
 });
+it('uses the reviewed queue for app move reviews', async () => {
+  const review = vi.spyOn(service, 'review').mockResolvedValueOnce({
+    id: 'queue',
+    projectId: 'test',
+    batchId: 'batch',
+    revision: 1,
+    items: [],
+    issues: [],
+    held: 0,
+    unchanged: 0,
+    scope: 'queue',
+    unreviewed: 1,
+    newFolders: [],
+    expiresAt: Date.now() + 1000,
+  });
+  try {
+    const { token } = await (await fetch(`${base}/api/session`)).json();
+    const response = await fetch(`${base}/api/projects/test/batches/batch/review`, {
+      method: 'POST',
+      headers: { 'x-organizer-token': token },
+    });
+    expect(response.status).toBe(200);
+    expect(review).toHaveBeenCalledWith('test', 'batch', 'queue');
+  } finally {
+    review.mockRestore();
+  }
+});
 it('refuses shutdown during a move and allows it when idle', async () => {
   const session = await (await fetch(`${base}/api/session`)).json();
   const stop = () =>

@@ -302,6 +302,8 @@ export interface MoveReview {
   issues: Issue[];
   held: number;
   unchanged: number;
+  scope: 'all' | 'queue';
+  unreviewed: number;
   newFolders: string[];
   expiresAt: number;
 }
@@ -340,6 +342,9 @@ export function isPending(clip: BatchClip) {
     !clip.applied &&
     (clip.currentPath !== targetPath(clip) || markerChanges(clip).length > 0)
   );
+}
+export function isInMoveQueue(clip: BatchClip) {
+  return !!clip.reviewed && !clip.held && !clip.applied;
 }
 export function editOf(batch: Batch): BatchEdit {
   return {

@@ -65,7 +65,7 @@ export function createApp(
       token,
       platform: process.platform,
       dataDir: service.store.dataDir,
-      features: ['marker-review-v1', 'marker-editing-v1', 'clip-review-v1'],
+      features: ['marker-review-v1', 'marker-editing-v1', 'clip-review-v1', 'move-queue-v1'],
     }),
   );
   app.get('/api/projects', async (_req, res) => res.json(await service.summaries()));
@@ -187,7 +187,7 @@ export function createApp(
     res.type('text/markdown').send(batchMarkdown(state.project, batch, state.operations));
   });
   app.post('/api/projects/:projectId/batches/:batchId/review', async (req, res) =>
-    res.json(await service.review(projectId(req), batchId(req))),
+    res.json(await service.review(projectId(req), batchId(req), 'queue')),
   );
   app.post('/api/projects/:projectId/batches/:batchId/move', async (req, res) => {
     const body = z.object({ reviewId: safeId }).parse(req.body);

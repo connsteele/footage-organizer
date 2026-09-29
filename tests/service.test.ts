@@ -79,6 +79,49 @@ afterAll(async () => {
     await rm(resolved, { recursive: true, force: true });
   }
 });
+it('preflights and moves only the reviewed queue, retaining unreviewed, held and unchanged clips', async () => {
+  const f = await fixture(undefined, 4);
+  const batch = await f.importBatch();
+  const edit = editOf(batch);
+  edit.clips[0].reviewed = true;
+  // An unreviewed clip can have a conflicting proposal; it must not block or join the queue.
+  edit.clips[1].proposed = { ...edit.clips[0].proposed };
+  edit.clips[2].reviewed = true;
+  edit.clips[2].held = true;
+  edit.clips[3].reviewed = true;
+  edit.clips[3].proposed = { folder: '_cut', filename: 'Clip 4.mp4' };
+  const saved = await f.service.saveBatch('test', batch.id, edit);
+  const review = await f.service.review('test', batch.id, 'queue');
+  expect(review.items.map((item) => item.clipId)).toEqual([1]);
+  expect(review).toMatchObject({
+    scope: 'queue',
+    unreviewed: 1,
+    held: 1,
+    unchanged: 1,
+    issues: [],
+  });
+  const uncheck = editOf(saved);
+  uncheck.clips[0].reviewed = false;
+  await f.service.saveBatch('test', batch.id, uncheck);
+  await expect(f.service.startMove('test', batch.id, review.id)).rejects.toThrow('plan changed');
+  expect((await f.service.review('test', batch.id, 'queue')).items).toEqual([]);
+  const recheck = editOf((await f.store.load('test')).batches[0]);
+  recheck.clips[0].reviewed = true;
+  await f.service.saveBatch('test', batch.id, recheck);
+  const ready = await f.service.review('test', batch.id, 'queue');
+  await f.service.startMove('test', batch.id, ready.id);
+  await f.service.waitForIdle();
+  const after = await f.store.load('test');
+  expect(after.operations[0].items.map((item) => item.clipId)).toEqual([1]);
+  expect(after.operations[0].status).toBe('completed');
+  expect(after.batches[0].clips.map((clip) => clip.applied)).toEqual([true, false, false, false]);
+  for (const id of [2, 3, 4])
+    expect(await exists(path.join(f.media, `_cut/Clip ${id}.mp4`))).toBe(true);
+  const empty = await f.service.review('test', batch.id, 'queue');
+  expect(empty.items).toEqual([]);
+  expect(empty.unchanged).toBe(1); // Filed clips are not counted again.
+});
+
 describe('project deletion and retained plans', () => {
   it('removes registration, retains all records, and reopens the complete project', async () => {
     const f = await fixture();

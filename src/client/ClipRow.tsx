@@ -17,7 +17,7 @@ import {
   type BatchClip,
   type ClipEdit,
 } from '../shared/model';
-import { markerChanges } from '../shared/markers';
+import { markerChanges, pendingMarkerChanges } from '../shared/markers';
 import { FilenameInput } from './FilenameInput';
 import { ClipPreview } from './ClipPreview';
 import { MarkerReview } from './MarkerReview';
@@ -65,6 +65,7 @@ export function ClipRow({
   const questions = clip.agentReview?.questions ?? clip.original.questions;
   const renamed = currentName !== clip.proposed.filename;
   const movedFolder = clip.currentPath.split('/').slice(0, -1).join('/') !== clip.proposed.folder;
+  const pendingMarkers = clip.applied ? 0 : pendingMarkerChanges(clip);
   const status = clip.applied
     ? 'Filed'
     : clip.held
@@ -140,6 +141,14 @@ export function ClipRow({
         >
           {status}
         </span>
+        {pendingMarkers > 0 && (
+          <span
+            className={styles.statusPill}
+            title="Pending marker name suggestions. Accept a name or keep Original in Preview or Details."
+          >
+            {pendingMarkers} {pendingMarkers === 1 ? 'marker' : 'markers'} to review
+          </span>
+        )}
         <button
           className={`${styles.clipReviewButton} ${clip.reviewed ? styles.clipReviewed : ''}`}
           aria-label={`Reviewed clip ${clipLabel(clip.id)}`}

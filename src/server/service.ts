@@ -428,7 +428,11 @@ export class Organizer {
       return batch;
     });
   }
-  async review(projectId: string, batchId: string): Promise<MoveReview> {
+  async review(
+    projectId: string,
+    batchId: string,
+    scope: 'all' | 'queue' = 'all',
+  ): Promise<MoveReview> {
     this.idle();
     const state = await this.store.load(projectId);
     const batch = this.batch(state, batchId);
@@ -441,6 +445,8 @@ export class Organizer {
       issues: [],
       held: 0,
       unchanged: 0,
+      scope,
+      unreviewed: 0,
       newFolders: [],
       expiresAt: Date.now() + 300000,
     };
@@ -470,8 +476,13 @@ export class Organizer {
           'An earlier move has an ambiguous result. Resolve its paths and use Check recovery before retrying.',
       });
     for (const clip of batch.clips) {
+      if (scope === 'queue' && clip.applied) continue;
       if (clip.held) {
         review.held++;
+        continue;
+      }
+      if (scope === 'queue' && !clip.reviewed) {
+        review.unreviewed++;
         continue;
       }
       const to = targetPath(clip);
@@ -544,7 +555,7 @@ export class Organizer {
         approved.expiresAt < Date.now()
       )
         throw new AppError('The plan changed or this review expired. Review the moves again.', 409);
-      const fresh = await this.review(projectId, batchId);
+      const fresh = await this.review(projectId, batchId, approved.scope);
       if (fresh.issues.length)
         throw new AppError(
           'The files changed or the plan has blocking issues. Review the moves again.',
